@@ -55,6 +55,12 @@ async def lifespan(app: FastAPI):
             conn.execute(text("ALTER TABLE trips ADD COLUMN IF NOT EXISTS en_route_pickup_at TIMESTAMP;"))
             conn.execute(text("ALTER TABLE trips ADD COLUMN IF NOT EXISTS arrived_pickup_at TIMESTAMP;"))
             conn.execute(text("ALTER TABLE trips ADD COLUMN IF NOT EXISTS loaded_at TIMESTAMP;"))
+            conn.execute(text("ALTER TABLE trip_stops ADD COLUMN IF NOT EXISTS created_by_user_id INTEGER;"))
+            conn.execute(text("ALTER TABLE trip_stops ADD COLUMN IF NOT EXISTS created_by_type VARCHAR(30);"))
+            conn.execute(text("ALTER TABLE trip_stops ADD COLUMN IF NOT EXISTS status VARCHAR(30);"))
+            conn.execute(text("ALTER TABLE trip_stops ADD COLUMN IF NOT EXISTS started_at TIMESTAMP;"))
+            conn.execute(text("ALTER TABLE trip_stops ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP;"))
+            conn.execute(text("ALTER TABLE trip_stops ADD COLUMN IF NOT EXISTS delay_fee_per_24h NUMERIC(12,2) DEFAULT 3000;"))
             conn.commit()
     except Exception as e:
         logger.warning("Falha ao adicionar colunas via SQL (podem já existir): %s", e)

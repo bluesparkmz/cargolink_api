@@ -356,6 +356,19 @@ class TripStop(Base):
     resumed_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
+
+    # Campos adicionais para regularização e taxa de demora.
+    created_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_by_type: Mapped[str | None] = mapped_column(String(30))
+    status: Mapped[str | None] = mapped_column(String(30))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime)
+    delay_fee_per_24h: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 2), default=3000
+    )
+
     trip: Mapped[Trip] = relationship(back_populates="stops")
 
 
@@ -613,35 +626,6 @@ class FinancialSetting(Base):
     value: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
-    )
-
-
-class TripStop(Base):
-    """Paragem operacional durante uma viagem."""
-
-    __tablename__ = "trip_stops"
-
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    trip_id: Mapped[int] = mapped_column(
-        ForeignKey("trips.id", ondelete="CASCADE"), nullable=False
-    )
-    category: Mapped[str] = mapped_column(String(80), nullable=False)
-    location_name: Mapped[str] = mapped_column(String(180), nullable=False)
-    description: Mapped[str] = mapped_column(Text, nullable=False)
-    created_by_user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
-    )
-    created_by_type: Mapped[str] = mapped_column(String(30), nullable=False)
-    status: Mapped[str] = mapped_column(
-        String(30), default="programada", nullable=False
-    )
-    started_at: Mapped[datetime | None] = mapped_column(DateTime)
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime)
-    delay_fee_per_24h: Mapped[Decimal] = mapped_column(
-        Numeric(12, 2), default=3000, nullable=False
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now()
     )
 
 

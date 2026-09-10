@@ -214,7 +214,7 @@ def _delay_calculation(
         else 0
     )
 
-    rate_24h = Decimal(str(stop.delay_fee_per_24h))
+    rate_24h = Decimal(str(stop.delay_fee_per_24h or 3000))
     hourly_rate = rate_24h / Decimal("24")
     fee = (
         hourly_rate * Decimal(chargeable_hours)
@@ -260,7 +260,7 @@ def _sync_additional_charge(
             status="pendente_pagamento",
             description=(
                 f"Taxa de demora — "
-                f"{CATEGORY_LABELS.get(stop.category, stop.category)}"
+                f"{CATEGORY_LABELS.get(stop.stop_type, stop.stop_type)}"
             ),
         )
         db.add(charge)
@@ -269,7 +269,7 @@ def _sync_additional_charge(
         charge.amount = amount
         charge.description = (
             f"Taxa de demora — "
-            f"{CATEGORY_LABELS.get(stop.category, stop.category)}"
+            f"{CATEGORY_LABELS.get(stop.stop_type, stop.stop_type)}"
         )
 
     return charge, created
@@ -284,13 +284,13 @@ def _stop_payload(
     return {
         "id": stop.id,
         "trip_id": stop.trip_id,
-        "category": stop.category,
+        "category": stop.stop_type,
         "category_label": CATEGORY_LABELS.get(
-            stop.category,
-            stop.category,
+            stop.stop_type,
+            stop.stop_type,
         ),
         "location_name": stop.location_name,
-        "description": stop.description,
+        "description": stop.notes,
         "created_by_user_id": stop.created_by_user_id,
         "created_by_type": stop.created_by_type,
         "status": stop.status,
@@ -300,7 +300,7 @@ def _stop_payload(
         "delay_grace_hours": 24,
         "delay_fee_per_24h": float(stop.delay_fee_per_24h),
         "hourly_rate": float(
-            Decimal(str(stop.delay_fee_per_24h))
+            Decimal(str(stop.delay_fee_per_24h or 3000))
             / Decimal("24")
         ),
         "elapsed_seconds": calc["elapsed_seconds"],
@@ -387,9 +387,9 @@ def create_trip_stop(
 
     stop = TripStop(
         trip_id=trip.id,
-        category=category,
+        stop_type=category,
         location_name=location_name.strip(),
-        description=description.strip(),
+        notes=description.strip(),
         created_by_user_id=user.id,
         created_by_type=actor,
         status=(
@@ -427,7 +427,7 @@ def create_trip_stop(
         title = "Paragem para regularização"
         body = (
             f"O motorista parou em {stop.location_name}. "
-            f"Motivo: {stop.description}"
+            f"Motivo: {stop.notes}"
         )
         recipients = [
             client_user_id,
@@ -438,7 +438,7 @@ def create_trip_stop(
         title = "Nova paragem programada"
         body = (
             f"A empresa adicionou uma paragem em "
-            f"{stop.location_name}: {stop.description}"
+            f"{stop.location_name}: {stop.notes}"
         )
         recipients = [
             client_user_id,
@@ -456,7 +456,7 @@ def create_trip_stop(
             "trip_id": trip.id,
             "load_id": trip.load_id,
             "stop_id": stop.id,
-            "category": stop.category,
+            "category": stop.stop_type,
             "location_name": stop.location_name,
         },
     )
@@ -553,7 +553,7 @@ def start_trip_stop(
         title="Regularização iniciada",
         body=(
             f"O motorista chegou a {stop.location_name} "
-            f"e iniciou a paragem: {stop.description}"
+            f"e iniciou a paragem: {stop.notes}"
         ),
         notification_type="trip.stop_started",
         payload={
