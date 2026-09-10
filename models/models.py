@@ -597,3 +597,116 @@ class SystemSetting(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
     )
+
+# ---------------------------------------------------------------------------
+# Paragens, custos adicionais e definições financeiras Fretix
+# ---------------------------------------------------------------------------
+
+
+class FinancialSetting(Base):
+    """Definições financeiras alteráveis pela administração."""
+
+    __tablename__ = "financial_settings"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    key: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    value: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class TripStop(Base):
+    """Paragem operacional durante uma viagem."""
+
+    __tablename__ = "trip_stops"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    trip_id: Mapped[int] = mapped_column(
+        ForeignKey("trips.id", ondelete="CASCADE"), nullable=False
+    )
+    category: Mapped[str] = mapped_column(String(80), nullable=False)
+    location_name: Mapped[str] = mapped_column(String(180), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    created_by_user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    created_by_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(30), default="programada", nullable=False
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime)
+    delay_fee_per_24h: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), default=3000, nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now()
+    )
+
+
+class AdditionalCharge(Base):
+    """Custo adicional associado a uma paragem da viagem."""
+
+    __tablename__ = "additional_charges"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    trip_id: Mapped[int] = mapped_column(
+        ForeignKey("trips.id", ondelete="CASCADE"), nullable=False
+    )
+    stop_id: Mapped[int] = mapped_column(
+        ForeignKey("trip_stops.id", ondelete="CASCADE"),
+        unique=True,
+        nullable=False,
+    )
+    charge_type: Mapped[str] = mapped_column(
+        String(60), default="delay_fee", nullable=False
+    )
+    amount: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), default=0, nullable=False
+    )
+    status: Mapped[str] = mapped_column(
+        String(40), default="pendente_pagamento", nullable=False
+    )
+    description: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class FretixCommission(Base):
+    """Registo da comissão da plataforma sobre o transporte base."""
+
+    __tablename__ = "fretix_commissions"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    payment_id: Mapped[int] = mapped_column(
+        ForeignKey("payments.id", ondelete="CASCADE"),
+        unique=True,
+        nullable=False,
+    )
+    trip_id: Mapped[int | None] = mapped_column(
+        ForeignKey("trips.id", ondelete="SET NULL")
+    )
+    proposal_id: Mapped[int | None] = mapped_column(
+        ForeignKey("load_proposals.id", ondelete="SET NULL")
+    )
+    base_amount: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False
+    )
+    commission_percent: Mapped[Decimal] = mapped_column(
+        Numeric(6, 2), nullable=False
+    )
+    commission_amount: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False
+    )
+    status: Mapped[str] = mapped_column(
+        String(30), default="registada", nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now()
+    )
+

@@ -20,9 +20,11 @@ from constants import (
 )
 from controllers.notifications_controller import create_notification, emit_notification
 from controllers.wallet_controller import get_or_create_wallet
+from controllers.financial_settings import get_financial_setting
 from models.models import (
     Client,
     Company,
+    FretixCommission,
     LoadProposal,
     Payment,
     ProposalNegotiation,
@@ -110,6 +112,9 @@ def _transport_payment_payload(
         "load_id": proposal.load_id,
         "trip_id": trip.id if trip else metadata.get("trip_id"),
         "amount": float(amount),
+        "commission_percent": float(metadata.get("commission_percent", 0) or 0),
+        "commission_amount": float(metadata.get("commission_amount", 0) or 0),
+        "company_net_amount": float(metadata.get("company_net_amount", amount) or amount),
         "status": payment.status if payment else "nao_pago",
         "escrow_status": escrow_status,
         "available_balance": float(wallet.available_balance or Decimal("0")),
@@ -235,12 +240,22 @@ def pay_accepted_proposal_from_wallet(
             ),
         )
 
+    commission_percent = get_financial_setting(
+        db,
+        "fretix_commission_percent",
+        Decimal("30.00"),
+    )
+    commission_amount = (
+        amount * commission_percent / Decimal("100")
+    ).quantize(Decimal("0.01"))
+    company_net_amount = amount - commission_amount
+
     reference = f"FW{uuid4().hex[:16].upper()}"
 
     client_wallet.available_balance = available - amount
     company_wallet.pending_balance = (
         company_wallet.pending_balance or Decimal("0")
-    ) + amount
+    ) + company_net_amount
 
     payment = Payment(
         user_id=user.id,
@@ -256,6 +271,9 @@ def pay_accepted_proposal_from_wallet(
             "company_id": company.id,
             "trip_id": trip.id if trip else None,
             "escrow_status": "held",
+            "commission_percent": float(commission_percent),
+            "commission_amount": float(commission_amount),
+            "company_net_amount": float(company_net_amount),
             "held_at": datetime.now(timezone.utc).isoformat(),
         },
     )
@@ -279,7 +297,7 @@ def pay_accepted_proposal_from_wallet(
         Transaction(
             wallet_id=company_wallet.id,
             transaction_type=TRANSACTION_TYPE_ESCROW_RECEIVED,
-            amount=amount,
+            amount=company_net_amount,
             status=TRANSACTION_STATUS_PENDING,
             reference=reference,
             description=(
@@ -289,13 +307,29 @@ def pay_accepted_proposal_from_wallet(
         )
     )
 
+    db.flush()
+
+    db.add(
+        FretixCommission(
+            payment_id=payment.id,
+            trip_id=trip.id if trip else None,
+            proposal_id=proposal.id,
+            base_amount=amount,
+            commission_percent=commission_percent,
+            commission_amount=commission_amount,
+            status="registada",
+        )
+    )
+
     company_notification = create_notification(
         db,
         user_id=company.user_id,
         title="Pagamento recebido",
         body=(
             f"O cliente pagou {amount:.2f} MT. "
-            "O valor está em retenção até à confirmação da entrega."
+            f"Comissão Fretix: {commission_amount:.2f} MT "
+            f"({commission_percent:.2f}%). "
+            f"Valor líquido em retenção: {company_net_amount:.2f} MT."
         ),
         notification_type="wallet.payment_held",
         payload={
@@ -303,6 +337,9 @@ def pay_accepted_proposal_from_wallet(
             "load_id": proposal.load_id,
             "trip_id": trip.id if trip else None,
             "amount": float(amount),
+            "commission_percent": float(commission_percent),
+            "commission_amount": float(commission_amount),
+            "company_net_amount": float(company_net_amount),
         },
     )
 
@@ -364,7 +401,10 @@ def release_transport_escrow_for_trip(db: Session, trip: Trip) -> bool:
         return False
 
     company_wallet = _get_or_create_wallet_locked(db, company.user_id)
-    amount = Decimal(str(payment.amount))
+    gross_amount = Decimal(str(payment.amount))
+    amount = Decimal(
+        str(metadata.get("company_net_amount", payment.amount))
+    )
     pending = company_wallet.pending_balance or Decimal("0")
 
     if pending < amount:

@@ -30,6 +30,8 @@ from routers.proposals import router as proposals_router
 from routers.ratings import router as ratings_router
 from routers.stats import router as stats_router
 from routers.trips import router as trips_router
+from routers.trip_stops import router as trip_stops_router
+from routers.financial_settings import router as financial_settings_router
 from routers.users import router as users_router
 from routers.vehicles import router as vehicles_router
 from routers.wallet import router as wallet_router
@@ -104,6 +106,7 @@ app.include_router(loads_router, prefix="/loads", tags=["Loads"])
 app.include_router(proposals_router, prefix="/proposals", tags=["Proposals"])
 app.include_router(ratings_router, prefix="/ratings", tags=["Ratings"])
 app.include_router(trips_router, prefix="/trips", tags=["Trips"])
+app.include_router(trip_stops_router, prefix="/trip-stops", tags=["Trip Stops"])
 app.include_router(driver_trips_router, prefix="/driver/trips", tags=["Driver"])
 app.include_router(stats_router, prefix="/stats", tags=["Stats"])
 app.include_router(vehicles_router, prefix="/vehicles", tags=["Vehicles"])
@@ -113,6 +116,7 @@ app.include_router(notifications_router, prefix="/notifications", tags=["Notific
 app.include_router(messages_router, prefix="/messages", tags=["Messages"])
 app.include_router(websocket_router, tags=["Realtime"])
 app.include_router(admin_router, prefix="/admin", tags=["Admin"])
+app.include_router(financial_settings_router, prefix="/admin/financial-settings", tags=["Admin Financial Settings"])
 
 
 def custom_openapi():
