@@ -20,6 +20,7 @@ from constants import (
 )
 from controllers.notifications_controller import create_notification, emit_notification
 from controllers.wallet_controller import get_or_create_wallet
+from controllers.wallet_financial_controller import get_paid_fuel_advance_total
 from controllers.financial_settings import get_financial_setting
 from models.models import (
     Client,
@@ -402,8 +403,13 @@ def release_transport_escrow_for_trip(db: Session, trip: Trip) -> bool:
 
     company_wallet = _get_or_create_wallet_locked(db, company.user_id)
     gross_amount = Decimal(str(payment.amount))
-    amount = Decimal(
+    company_net_amount = Decimal(
         str(metadata.get("company_net_amount", payment.amount))
+    )
+    paid_fuel_advances = get_paid_fuel_advance_total(db, trip.id)
+    amount = max(
+        Decimal("0"),
+        company_net_amount - paid_fuel_advances,
     )
     pending = company_wallet.pending_balance or Decimal("0")
 

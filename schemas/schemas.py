@@ -1055,11 +1055,14 @@ class VehicleUpdateRequest(BaseModel):
 
 
 class WalletBalanceResponse(BaseModel):
-    """Saldo da carteira do utilizador."""
+    """Saldo da carteira com valores disponíveis e em retenção."""
 
     available_balance: float
     pending_balance: float
     blocked_balance: float
+    accounting_balance: float = 0
+    frozen_balance: float = 0
+    role: str | None = None
     currency: str = "MT"
 
 

@@ -2,7 +2,10 @@
 Rotas de carteira: saldo, extrato e depósitos M-Pesa.
 """
 
+from decimal import Decimal
+
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from controllers.wallet_controller import (
@@ -16,6 +19,13 @@ from controllers.wallet_controller import (
     sync_deposit_with_mpesa,
 )
 from controllers.wallet_transport_controller import get_transport_payment_status, pay_accepted_proposal_from_wallet
+from controllers.wallet_financial_controller import (
+    create_fuel_advance_request,
+    get_fuel_advance_eligibility,
+    get_wallet_summary,
+    get_wallet_transaction_details,
+    list_fuel_advances,
+)
 from database import get_db
 from deps import get_current_user
 from models.models import User
@@ -28,6 +38,13 @@ from schemas.schemas import (
 )
 
 router = APIRouter()
+
+
+
+class FuelAdvanceRequest(BaseModel):
+    vehicle_id: int = Field(..., gt=0)
+    amount: float = Field(..., gt=0)
+    mpesa_phone: str = Field(..., min_length=8, max_length=30)
 
 
 @router.get("/transactions", response_model=list[WalletTransactionResponse])
@@ -137,18 +154,59 @@ def pay_proposal_from_wallet_route(
     return pay_accepted_proposal_from_wallet(db, current_user, proposal_id)
 
 
+
+@router.get("/transactions/{transaction_id}")
+def transaction_details_route(
+    transaction_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return get_wallet_transaction_details(db, current_user, transaction_id)
+
+
+@router.get("/fuel-advances/{trip_id}/eligibility")
+def fuel_advance_eligibility_route(
+    trip_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return get_fuel_advance_eligibility(db, current_user, trip_id)
+
+
+@router.get("/fuel-advances/{trip_id}")
+def fuel_advance_list_route(
+    trip_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return list_fuel_advances(db, current_user, trip_id)
+
+
+@router.post("/fuel-advances/{trip_id}", status_code=201)
+def fuel_advance_create_route(
+    trip_id: int,
+    data: FuelAdvanceRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return create_fuel_advance_request(
+        db,
+        current_user,
+        trip_id,
+        vehicle_id=data.vehicle_id,
+        amount=Decimal(str(data.amount)),
+        mpesa_phone=data.mpesa_phone,
+    )
+
+
 @router.get("", response_model=WalletBalanceResponse)
 def get_balance(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Saldo na carteira (ecrã inicial do cliente)."""
-    wallet = get_wallet_balance(db, current_user)
-    return WalletBalanceResponse(
-        available_balance=float(wallet.available_balance),
-        pending_balance=float(wallet.pending_balance),
-        blocked_balance=float(wallet.blocked_balance),
-    )
+    summary = get_wallet_summary(db, current_user)
+    return WalletBalanceResponse(**summary)
 
 
 @router.post("/mpesa-callback")

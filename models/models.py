@@ -694,3 +694,41 @@ class FretixCommission(Base):
         DateTime, server_default=func.now()
     )
 
+
+class FuelAdvance(Base):
+    """Adiantamento de combustível solicitado pela empresa."""
+
+    __tablename__ = "fuel_advances"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    trip_id: Mapped[int] = mapped_column(
+        ForeignKey("trips.id", ondelete="CASCADE"), nullable=False
+    )
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey("companies.id", ondelete="CASCADE"), nullable=False
+    )
+    vehicle_id: Mapped[int] = mapped_column(
+        ForeignKey("vehicles.id", ondelete="CASCADE"), nullable=False
+    )
+    requested_by_user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    mpesa_phone: Mapped[str] = mapped_column(String(30), nullable=False)
+    max_allowed_amount: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False
+    )
+    status: Mapped[str] = mapped_column(
+        String(50), default="aprovado_aguardando_desembolso", nullable=False
+    )
+    external_reference: Mapped[str | None] = mapped_column(String(100))
+    provider_response: Mapped[dict | None] = mapped_column(JSONB)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime)
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
