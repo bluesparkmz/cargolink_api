@@ -4,7 +4,7 @@ Rotas de veiculos: camioes disponiveis e gestao pela empresa.
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
 from controllers.location_controller import resolve_vehicle_coordinates, update_vehicle_location
@@ -18,7 +18,7 @@ from controllers.vehicles_controller import (
 )
 from database import get_db
 from deps import get_current_user
-from models.models import User, Vehicle
+from models.models import Company, Driver, User, Vehicle
 from schemas.schemas import (
     LocationUpdateRequest,
     VehicleCreateRequest,
@@ -64,6 +64,82 @@ def _to_detail(vehicle: Vehicle) -> VehicleDetailResponse:
         driver_rating=float(vehicle.driver.average_rating) if vehicle.driver else None,
         driver_photo=vehicle.driver.user.profile_photo if vehicle.driver and vehicle.driver.user else None,
     )
+
+
+
+def _to_public_list_item(vehicle: Vehicle) -> VehicleListItem:
+    # Dados públicos do camião para clientes, sem empresa/motorista/localização.
+    return VehicleListItem(
+        id=vehicle.id,
+        company_id=vehicle.company_id,
+        company_name=None,
+        driver_id=None,
+        plate=vehicle.plate,
+        brand=vehicle.brand,
+        model_name=vehicle.model_name,
+        vehicle_type=vehicle.vehicle_type,
+        tonnage_capacity=float(vehicle.tonnage_capacity)
+        if vehicle.tonnage_capacity is not None
+        else None,
+        photo=vehicle.photo,
+        status=vehicle.status,
+        current_lat=None,
+        current_lng=None,
+        location_updated_at=None,
+    )
+
+
+def _to_public_detail(vehicle: Vehicle) -> VehicleDetailResponse:
+    item = _to_public_list_item(vehicle)
+    return VehicleDetailResponse(
+        **item.model_dump(),
+        company_name=None,
+        driver_name=None,
+        driver_rating=None,
+        driver_photo=None,
+    )
+
+
+def _assert_private_vehicle_access(
+    db: Session,
+    current_user: User,
+    vehicle: Vehicle,
+) -> None:
+    if current_user.user_type == "admin":
+        return
+
+    if current_user.user_type == "empresa":
+        company = (
+            db.query(Company)
+            .filter(Company.user_id == current_user.id)
+            .first()
+        )
+        if company and vehicle.company_id == company.id:
+            return
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="A empresa só pode consultar os seus próprios camiões.",
+        )
+
+    if current_user.user_type == "motorista":
+        driver = (
+            db.query(Driver)
+            .filter(Driver.user_id == current_user.id)
+            .first()
+        )
+        if driver and vehicle.driver_id == driver.id:
+            return
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Sem acesso a este camião.",
+        )
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Sem acesso a este camião.",
+    )
+
+
 
 
 @router.get("/me", response_model=list[VehicleListItem])
@@ -195,10 +271,23 @@ def list_all(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Lista camioes disponiveis."""
-    vehicles = list_vehicles(db, status_filter=status, available_only=available_only)
-    return [_to_list_item(v) for v in vehicles]
+    # Marketplace de camiões: disponível apenas para cliente/admin.
+    if current_user.user_type not in {"cliente", "admin"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="A listagem geral de camiões está disponível apenas para clientes.",
+        )
 
+    vehicles = list_vehicles(
+        db,
+        status_filter=status,
+        available_only=available_only,
+    )
+
+    if current_user.user_type == "cliente":
+        return [_to_public_list_item(v) for v in vehicles]
+
+    return [_to_list_item(v) for v in vehicles]
 
 @router.get("/{vehicle_id}", response_model=VehicleDetailResponse)
 def get_by_id(
@@ -206,5 +295,11 @@ def get_by_id(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Detalhe do camiao."""
-    return _to_detail(get_vehicle_by_id(db, vehicle_id))
+    # Detalhe do camião com regras de privacidade por perfil.
+    vehicle = get_vehicle_by_id(db, vehicle_id)
+
+    if current_user.user_type == "cliente":
+        return _to_public_detail(vehicle)
+
+    _assert_private_vehicle_access(db, current_user, vehicle)
+    return _to_detail(vehicle)
