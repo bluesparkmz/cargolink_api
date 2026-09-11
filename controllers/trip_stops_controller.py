@@ -177,8 +177,19 @@ def _emit_stop_event(
         company_user_id,
         driver_user_id,
     }:
-        if user_id:
-            emit_to_user(user_id, event)
+        if not user_id:
+            continue
+
+        user_event = event
+        if driver_user_id and user_id == driver_user_id:
+            user_event = {
+                **event,
+                "stop": _sanitize_stop_payload_for_driver(
+                    stop_payload
+                ),
+            }
+
+        emit_to_user(user_id, user_event)
 
 
 def _delay_calculation(
@@ -318,6 +329,39 @@ def _stop_payload(
             charge.status if charge else None
         ),
     }
+
+
+
+_DRIVER_HIDDEN_STOP_FIELDS = {
+    "delay_fee_per_24h",
+    "hourly_rate",
+    "chargeable_hours",
+    "delay_fee_amount",
+    "additional_charge_id",
+    "additional_charge_status",
+}
+
+
+def _sanitize_stop_payload_for_driver(payload: dict) -> dict:
+    result = dict(payload)
+    for key in _DRIVER_HIDDEN_STOP_FIELDS:
+        result.pop(key, None)
+
+    elapsed = int(result.get("elapsed_seconds") or 0)
+    result["grace_period_exceeded"] = elapsed > 24 * 3600
+    result["overtime_seconds"] = max(0, elapsed - 24 * 3600)
+    return result
+
+
+def _stop_payload_for_role(
+    stop: TripStop,
+    role: str,
+    charge: AdditionalCharge | None = None,
+) -> dict:
+    payload = _stop_payload(stop, charge)
+    if role == "motorista":
+        return _sanitize_stop_payload_for_driver(payload)
+    return payload
 
 
 def list_stop_categories() -> list[dict]:
@@ -476,7 +520,7 @@ def create_trip_stop(
         company_user_id=company_user_id,
         driver_user_id=driver_user_id,
     )
-    return payload
+    return _stop_payload_for_role(stop, actor)
 
 
 def start_trip_stop(
@@ -509,8 +553,9 @@ def start_trip_stop(
         )
 
     if stop.status == STOP_STATUS_ACTIVE:
-        return _stop_payload(
+        return _stop_payload_for_role(
             stop,
+            actor,
             _sync_additional_charge(db, stop)[0],
         )
 
@@ -578,7 +623,7 @@ def start_trip_stop(
         company_user_id=company.user_id if company else None,
         driver_user_id=driver.user_id if driver else None,
     )
-    return payload
+    return _stop_payload_for_role(stop, actor)
 
 
 def complete_trip_stop(
@@ -612,7 +657,11 @@ def complete_trip_stop(
 
     if stop.status == STOP_STATUS_COMPLETED:
         charge, _ = _sync_additional_charge(db, stop)
-        return _stop_payload(stop, charge)
+        return _stop_payload_for_role(
+            stop,
+            actor,
+            charge,
+        )
 
     if stop.status != STOP_STATUS_ACTIVE:
         raise HTTPException(
@@ -679,7 +728,7 @@ def complete_trip_stop(
         company_user_id=company.user_id if company else None,
         driver_user_id=driver.user_id if driver else None,
     )
-    return payload
+    return _stop_payload_for_role(stop, actor, charge)
 
 
 def list_trip_stops(
@@ -688,7 +737,7 @@ def list_trip_stops(
     trip_id: int,
 ) -> list[dict]:
     trip = _get_trip(db, trip_id)
-    _assert_trip_access(db, user, trip)
+    role = _assert_trip_access(db, user, trip)
 
     stops = (
         db.query(TripStop)
@@ -708,7 +757,13 @@ def list_trip_stops(
             db,
             stop,
         )
-        result.append(_stop_payload(stop, charge))
+        result.append(
+            _stop_payload_for_role(
+                stop,
+                role,
+                charge,
+            )
+        )
 
         if created and charge is not None:
             new_charge_notifications.extend(
@@ -788,6 +843,15 @@ def get_trip_financial_summary(
 ) -> dict:
     trip = _get_trip(db, trip_id)
     role = _assert_trip_access(db, user, trip)
+
+    if role == "motorista":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Informação financeira da viagem não está "
+                "disponível para o motorista."
+            ),
+        )
 
     # Actualiza custos de demora antes de resumir.
     stops = (

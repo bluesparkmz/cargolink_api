@@ -754,6 +754,36 @@ class TripLoadSummary(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class TripDriverLoadSummary(BaseModel):
+    # Carga visível no app motorista, sem qualquer valor financeiro.
+
+    id: int
+    client_id: int
+    code: str
+    load_type: str
+    load_name: str | None = None
+    description: str | None = None
+    weight: float | None = None
+    weight_unit: str | None = None
+    volume: float | None = None
+    negotiable: bool
+    origin: str
+    destination: str
+    origin_lat: float | None = None
+    origin_lng: float | None = None
+    destination_lat: float | None = None
+    destination_lng: float | None = None
+    departure_date: date | None = None
+    load_fill: str | None = None
+    suggested_vehicle_type: str | None = None
+    instructions: str | None = None
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class TripDriverSummary(BaseModel):
     """Resumo do motorista da viagem."""
 
@@ -931,6 +961,7 @@ class TripDriverDetailResponse(TripResponse):
     client_name: str
     client_phone: str | None = None
     progress_percent: float | None = None
+    load: TripDriverLoadSummary | None = None
     stops: list[TripStopResponse] = []
 
 
