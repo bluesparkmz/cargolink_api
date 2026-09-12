@@ -432,6 +432,13 @@ class LoadCreateRequest(BaseModel):
     load_fill: str | None = None
     suggested_vehicle_type: str | None = Field(None, max_length=150)
     instructions: str | None = None
+    payment_mode: Literal[
+        "integral",
+        "parcelas_50_50",
+        "prazo_apos_descarga",
+        "prazo_desde_carregamento",
+    ] = "integral"
+    payment_term_days: int | None = Field(None, ge=1, le=365)
     images: list[LoadImageCreateRequest] | None = None
 
 
@@ -466,6 +473,13 @@ class LoadCreateRequestForm(BaseModel):
     load_fill: Literal["completa", "meia_carga"] = Field(default="completa", description="Tipo de carga")
     suggested_vehicle_type: str = Field(default="Camião", max_length=150)
     instructions: str = Field(default="Carga frágil - manusejar com cuidado", description="Instruções especiais")
+    payment_mode: Literal[
+        "integral",
+        "parcelas_50_50",
+        "prazo_apos_descarga",
+        "prazo_desde_carregamento",
+    ] = "integral"
+    payment_term_days: int | None = Field(None, ge=1, le=365)
 
 
 class LoadUpdateRequest(BaseModel):
@@ -489,6 +503,8 @@ class LoadUpdateRequest(BaseModel):
     load_fill: str | None = None
     suggested_vehicle_type: str | None = Field(None, max_length=150)
     instructions: str | None = None
+    payment_mode: str | None = None
+    payment_term_days: int | None = Field(None, ge=1, le=365)
     status: str | None = None
 
 
@@ -516,6 +532,8 @@ class LoadResponse(BaseModel):
     load_fill: str | None = None
     suggested_vehicle_type: str | None = None
     instructions: str | None = None
+    payment_mode: str = "integral"
+    payment_term_days: int | None = None
     status: str
     created_at: datetime
     updated_at: datetime

@@ -31,6 +31,7 @@ from routers.ratings import router as ratings_router
 from routers.stats import router as stats_router
 from routers.trips import router as trips_router
 from routers.trip_stops import router as trip_stops_router
+from routers.trip_evidence import router as trip_evidence_router
 from routers.financial_settings import router as financial_settings_router
 from routers.users import router as users_router
 from routers.vehicles import router as vehicles_router
@@ -61,6 +62,9 @@ async def lifespan(app: FastAPI):
             conn.execute(text("ALTER TABLE trip_stops ADD COLUMN IF NOT EXISTS started_at TIMESTAMP;"))
             conn.execute(text("ALTER TABLE trip_stops ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP;"))
             conn.execute(text("ALTER TABLE trip_stops ADD COLUMN IF NOT EXISTS delay_fee_per_24h NUMERIC(12,2) DEFAULT 3000;"))
+            conn.execute(text("ALTER TABLE loads ADD COLUMN IF NOT EXISTS payment_mode VARCHAR(40) DEFAULT 'integral';"))
+            conn.execute(text("ALTER TABLE loads ADD COLUMN IF NOT EXISTS payment_term_days INTEGER;"))
+            conn.execute(text("UPDATE loads SET payment_mode = 'integral' WHERE payment_mode IS NULL;"))
             conn.commit()
     except Exception as e:
         logger.warning("Falha ao adicionar colunas via SQL (podem já existir): %s", e)
@@ -113,6 +117,7 @@ app.include_router(proposals_router, prefix="/proposals", tags=["Proposals"])
 app.include_router(ratings_router, prefix="/ratings", tags=["Ratings"])
 app.include_router(trips_router, prefix="/trips", tags=["Trips"])
 app.include_router(trip_stops_router, prefix="/trip-stops", tags=["Trip Stops"])
+app.include_router(trip_evidence_router, prefix="/trip-evidence", tags=["Trip Evidence"])
 app.include_router(driver_trips_router, prefix="/driver/trips", tags=["Driver"])
 app.include_router(stats_router, prefix="/stats", tags=["Stats"])
 app.include_router(vehicles_router, prefix="/vehicles", tags=["Vehicles"])

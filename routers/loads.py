@@ -82,6 +82,32 @@ def list_load_fill_types():
     return [LoadFillTypeItem(**item) for item in LOAD_FILL_TYPES]
 
 
+@router.get("/payment-modes")
+def list_payment_modes():
+    return [
+        {
+            "id": "integral",
+            "label": "Pagamento integral",
+            "requires_days": False,
+        },
+        {
+            "id": "parcelas_50_50",
+            "label": "50% na saída + 50% após confirmação da entrega",
+            "requires_days": False,
+        },
+        {
+            "id": "prazo_apos_descarga",
+            "label": "Pagar X dias depois da descarga",
+            "requires_days": True,
+        },
+        {
+            "id": "prazo_desde_carregamento",
+            "label": "Pagar durante X dias desde o carregamento",
+            "requires_days": True,
+        },
+    ]
+
+
 @router.post("", response_model=LoadDetailResponse, status_code=201)
 def publish_load(
     load_type: str = Form("mercadoria_geral"),
@@ -102,6 +128,8 @@ def publish_load(
     load_fill: str = Form("completa"),
     suggested_vehicle_type: str = Form("Camião"),
     instructions: str = Form("Carga frágil - manusejar com cuidado"),
+    payment_mode: str = Form("integral"),
+    payment_term_days: int | None = Form(None),
     images: Annotated[
         list[UploadFile] | None,
         File(description="Até 5 imagens (jpg, png)"),
@@ -129,8 +157,10 @@ def publish_load(
         load_fill=load_fill,
         suggested_vehicle_type=suggested_vehicle_type,
         instructions=instructions,
+        payment_mode=payment_mode,
+        payment_term_days=payment_term_days,
     )
-    
+
     return create_load_with_files(db, current_user, form_data, images)
 
 

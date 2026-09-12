@@ -160,6 +160,44 @@ def _validate_load_fill(load_fill: str | None) -> None:
         )
 
 
+PAYMENT_MODES = {
+    "integral",
+    "parcelas_50_50",
+    "prazo_apos_descarga",
+    "prazo_desde_carregamento",
+}
+DEFERRED_PAYMENT_MODES = {
+    "prazo_apos_descarga",
+    "prazo_desde_carregamento",
+}
+
+
+def _validate_payment_terms(
+    payment_mode: str,
+    payment_term_days: int | None,
+) -> int | None:
+    if payment_mode not in PAYMENT_MODES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Modalidade de pagamento inválida. Use integral, "
+                "parcelas_50_50, prazo_apos_descarga ou "
+                "prazo_desde_carregamento."
+            ),
+        )
+
+    if payment_mode in DEFERRED_PAYMENT_MODES:
+        days = int(payment_term_days or 0)
+        if days < 1 or days > 365:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Informe o prazo entre 1 e 365 dias.",
+            )
+        return days
+
+    return None
+
+
 def _haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     """Distância em linha recta entre dois pontos (aproximação de rota)."""
     r = 6371.0
@@ -267,6 +305,8 @@ def build_load_detail_response(db: Session, load: Load) -> LoadDetailResponse:
         load_fill=load.load_fill,
         suggested_vehicle_type=load.suggested_vehicle_type,
         instructions=load.instructions,
+        payment_mode=load.payment_mode or "integral",
+        payment_term_days=load.payment_term_days,
         status=load.status,
         created_at=load.created_at,
         updated_at=load.updated_at,
@@ -516,6 +556,10 @@ def create_load(db: Session, user: User, data: LoadCreateRequest) -> LoadDetailR
     data.load_type = _validate_load_type(data.load_type)
     _validate_weight_unit(data.weight_unit)
     _validate_load_fill(data.load_fill)
+    data.payment_term_days = _validate_payment_terms(
+        data.payment_mode,
+        data.payment_term_days,
+    )
 
     images = data.images or []
     if len(images) > MAX_LOAD_IMAGES:
@@ -551,6 +595,10 @@ def create_load_with_files(
     data.load_type = _validate_load_type(data.load_type)
     _validate_weight_unit(data.weight_unit)
     _validate_load_fill(data.load_fill)
+    data.payment_term_days = _validate_payment_terms(
+        data.payment_mode,
+        data.payment_term_days,
+    )
 
     if image_files and len(image_files) > MAX_LOAD_IMAGES:
         raise HTTPException(
@@ -722,6 +770,28 @@ def update_load(db: Session, user: User, load_id: int, data: LoadUpdateRequest) 
         _validate_weight_unit(fields.get("weight_unit"))
     if "load_fill" in fields:
         _validate_load_fill(fields.get("load_fill"))
+
+    if "payment_mode" in fields or "payment_term_days" in fields:
+        if load.status != LOAD_STATUS_AVAILABLE:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "A modalidade de pagamento não pode ser alterada "
+                    "depois da carga deixar de estar disponível."
+                ),
+            )
+        next_mode = fields.get(
+            "payment_mode",
+            load.payment_mode or "integral",
+        )
+        next_days = fields.get(
+            "payment_term_days",
+            load.payment_term_days,
+        )
+        fields["payment_term_days"] = _validate_payment_terms(
+            next_mode,
+            next_days,
+        )
 
     for field, value in fields.items():
         setattr(load, field, value)
@@ -936,6 +1006,18 @@ def accept_proposal(db: Session, user: User, load_id: int, proposal_id: int) -> 
         vehicle_id=None,
     )
     db.add(trip)
+    db.flush()
+
+    from controllers.payment_plan_controller import (
+        ensure_payment_plan_for_proposal,
+    )
+
+    ensure_payment_plan_for_proposal(
+        db,
+        proposal,
+        trip=trip,
+    )
+
     db.commit()
     db.refresh(trip)
 

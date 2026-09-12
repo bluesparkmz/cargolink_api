@@ -641,6 +641,15 @@ def confirm_loaded_trip(db: Session, user: User, trip_id: int) -> Trip:
         body="A carga foi carregada no camião e está pronta para a viagem de entrega.",
         notification_type="trip.loaded",
     )
+
+    from controllers.payment_plan_controller import (
+        start_payment_deadline_for_trip_event,
+    )
+    start_payment_deadline_for_trip_event(
+        db,
+        trip.id,
+        "loading",
+    )
     return get_trip_detail(db, trip.id)
 
 
@@ -756,6 +765,15 @@ def arrive_trip(db: Session, user: User, trip_id: int) -> Trip:
         title="Motorista chegou ao destino",
         body="A carga chegou ao destino. Aguarda confirmação do cliente.",
         notification_type="trip.arrived",
+    )
+
+    from controllers.payment_plan_controller import (
+        start_payment_deadline_for_trip_event,
+    )
+    start_payment_deadline_for_trip_event(
+        db,
+        trip.id,
+        "unloading",
     )
     return get_trip_detail(db, trip.id)
 

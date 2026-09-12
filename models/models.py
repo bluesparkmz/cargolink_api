@@ -211,6 +211,10 @@ class Load(Base):
     load_fill: Mapped[str | None] = mapped_column("tipo_carga_volume", String(30))
     suggested_vehicle_type: Mapped[str | None] = mapped_column("tipo_veiculo_sugerido", String(150))
     instructions: Mapped[str | None] = mapped_column("instrucoes", Text)
+    payment_mode: Mapped[str] = mapped_column(
+        String(40), default="integral", nullable=False
+    )
+    payment_term_days: Mapped[int | None] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(40), default="disponivel")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -730,5 +734,155 @@ class FuelAdvance(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+
+# ---------------------------------------------------------------------------
+# Planos de pagamento, parcelas e provas da viagem
+# ---------------------------------------------------------------------------
+
+
+class PaymentPlan(Base):
+    """Contrato financeiro da carga aceite."""
+
+    __tablename__ = "payment_plans"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    load_id: Mapped[int] = mapped_column(
+        ForeignKey("loads.id", ondelete="CASCADE"),
+        unique=True,
+        nullable=False,
+    )
+    proposal_id: Mapped[int | None] = mapped_column(
+        ForeignKey("load_proposals.id", ondelete="SET NULL")
+    )
+    trip_id: Mapped[int | None] = mapped_column(
+        ForeignKey("trips.id", ondelete="SET NULL")
+    )
+    client_user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey("companies.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    mode: Mapped[str] = mapped_column(String(50), nullable=False)
+    term_days: Mapped[int | None] = mapped_column(Integer)
+    contract_amount: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False
+    )
+    commission_percent: Mapped[Decimal] = mapped_column(
+        Numeric(6, 2), nullable=False
+    )
+    commission_amount: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False
+    )
+    company_net_entitlement: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False
+    )
+    client_paid_total: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), default=0, nullable=False
+    )
+    company_escrow_balance: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), default=0, nullable=False
+    )
+    company_released_total: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), default=0, nullable=False
+    )
+    commission_collected: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), default=0, nullable=False
+    )
+    deadline_started_at: Mapped[datetime | None] = mapped_column(DateTime)
+    due_at: Mapped[datetime | None] = mapped_column(DateTime)
+    status: Mapped[str] = mapped_column(
+        String(30), default="pendente", nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class PaymentInstallment(Base):
+    """Parcela do plano de pagamento."""
+
+    __tablename__ = "payment_installments"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    plan_id: Mapped[int] = mapped_column(
+        ForeignKey("payment_plans.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    kind: Mapped[str] = mapped_column(String(60), nullable=False)
+    percent: Mapped[Decimal] = mapped_column(
+        Numeric(6, 2), nullable=False
+    )
+    amount: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False
+    )
+    paid_amount: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), default=0, nullable=False
+    )
+    status: Mapped[str] = mapped_column(
+        String(30), default="pendente", nullable=False
+    )
+    due_at: Mapped[datetime | None] = mapped_column(DateTime)
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now()
+    )
+
+
+class TripEvidence(Base):
+    """Fotos da carga/descarga e Proof of Delivery."""
+
+    __tablename__ = "trip_evidence"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    trip_id: Mapped[int] = mapped_column(
+        ForeignKey("trips.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    load_id: Mapped[int] = mapped_column(
+        ForeignKey("loads.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    evidence_type: Mapped[str] = mapped_column(
+        String(50), nullable=False
+    )
+    file_url: Mapped[str] = mapped_column(Text, nullable=False)
+    mime_type: Mapped[str | None] = mapped_column(String(100))
+    original_name: Mapped[str | None] = mapped_column(String(255))
+    uploaded_by_user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now()
+    )
+
+
+class TripEvidenceStage(Base):
+    """Marca uma fase de provas como finalizada."""
+
+    __tablename__ = "trip_evidence_stages"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    trip_id: Mapped[int] = mapped_column(
+        ForeignKey("trips.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    stage: Mapped[str] = mapped_column(String(30), nullable=False)
+    finalized_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    finalized_at: Mapped[datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now()
     )
 
