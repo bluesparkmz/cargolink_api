@@ -591,6 +591,8 @@ class LoadListItem(BaseModel):
     weight_unit: str | None = None
     value: float | None = None
     negotiable: bool
+    payment_mode: str = "integral"
+    payment_term_days: int | None = None
     status: str
     departure_date: date | None = None
     created_at: datetime
@@ -1249,6 +1251,11 @@ class ActivityItem(BaseModel):
     display_status: str
     activity_at: datetime
     trip_id: int | None = None
+    payment_mode: str = "integral"
+    payment_status: str = "nao_pago"
+    payment_percent: float = 0
+    paid_amount: float = 0
+    remaining_amount: float = 0
 
 
 # ---------------------------------------------------------------------------

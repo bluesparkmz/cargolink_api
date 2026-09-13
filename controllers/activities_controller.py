@@ -17,7 +17,7 @@ from constants import (
     TRIP_STATUS_WAITING_CLIENT,
 )
 from controllers.clients_controller import get_my_client
-from models.models import Load, LoadProposal, Trip, User
+from models.models import Load, LoadProposal, PaymentPlan, Trip, User
 
 
 def _display_status(load: Load, trip: Trip | None, pending_proposals: int) -> str:
@@ -67,6 +67,22 @@ def list_client_activities(db: Session, user: User, *, limit: int = 20) -> list[
             or 0
         )
 
+        plan = db.query(PaymentPlan).filter(PaymentPlan.load_id == load.id).first()
+        contract_amount = float(plan.contract_amount) if plan else float(load.value or 0)
+        paid_amount = float(plan.client_paid_total) if plan else 0.0
+        remaining_amount = max(0.0, contract_amount - paid_amount)
+        payment_percent = (
+            min(100.0, round((paid_amount / contract_amount) * 100, 2))
+            if contract_amount > 0
+            else 0.0
+        )
+        if paid_amount <= 0:
+            payment_status = "nao_pago"
+        elif remaining_amount <= 0.009:
+            payment_status = "pago"
+        else:
+            payment_status = "parcial"
+
         activity_at = load.updated_at
         if trip and trip.started_at:
             activity_at = trip.started_at
@@ -85,6 +101,11 @@ def list_client_activities(db: Session, user: User, *, limit: int = 20) -> list[
                 "display_status": _display_status(load, trip, pending),
                 "activity_at": activity_at,
                 "trip_id": trip.id if trip else None,
+                "payment_mode": load.payment_mode or "integral",
+                "payment_status": payment_status,
+                "payment_percent": payment_percent,
+                "paid_amount": paid_amount,
+                "remaining_amount": remaining_amount,
             }
         )
 

@@ -639,6 +639,7 @@ def list_available_loads(
     load_type: str | None = None,
     origin: str | None = None,
     destination: str | None = None,
+    payment_mode: str | None = None,
     q: str | None = None,
     departure_date_from: date | None = None,
     departure_date_to: date | None = None,
@@ -656,6 +657,8 @@ def list_available_loads(
         query = query.filter(Load.origin.ilike(f"%{origin}%"))
     if destination:
         query = query.filter(Load.destination.ilike(f"%{destination}%"))
+    if payment_mode:
+        query = query.filter(Load.payment_mode == payment_mode)
     if q:
         pattern = f"%{q}%"
         query = query.filter(
