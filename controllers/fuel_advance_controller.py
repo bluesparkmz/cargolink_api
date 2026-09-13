@@ -139,7 +139,19 @@ def get_fuel_advance_eligibility(db: Session, user: User, trip_id: int) -> dict:
     escrow_available = money(plan.company_escrow_balance)
     contract_remaining = client_remaining(plan)
 
-    if escrow_available > 0:
+    deferred_modes = {
+        "prazo_apos_descarga",
+        "prazo_desde_carregamento",
+    }
+
+    # Cargas a prazo não devem depender de dinheiro congelado.
+    # A requisição de combustível vai sempre ao cliente, que pode
+    # Pagar ou Recusar. Se pagar, o valor conta como pagamento parcial
+    # do MESMO contrato de transporte.
+    if plan.mode in deferred_modes:
+        route = "client_approval"
+        currently_available = min(fuel_limit_remaining, contract_remaining)
+    elif escrow_available > 0:
         route = "automatic_escrow"
         currently_available = min(fuel_limit_remaining, escrow_available)
     else:
