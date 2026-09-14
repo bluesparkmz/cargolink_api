@@ -280,12 +280,16 @@ async def _handle_driver_location(websocket: WebSocket, db: Session, user: User,
         await _send_error(websocket, "trip_id invalido")
         return
 
+    location_data = data.get("location")
+    if not isinstance(location_data, dict):
+        location_data = data
+
     try:
         payload = TripLocationCreateRequest(
-            latitude=data.get("latitude"),
-            longitude=data.get("longitude"),
-            speed=data.get("speed"),
-            traveled_distance_km=data.get("traveled_distance_km"),
+            latitude=location_data.get("latitude"),
+            longitude=location_data.get("longitude"),
+            speed=location_data.get("speed"),
+            traveled_distance_km=location_data.get("traveled_distance_km"),
         )
     except ValidationError as exc:
         await _send_error(websocket, str(exc), "validation_error")

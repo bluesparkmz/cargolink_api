@@ -168,6 +168,7 @@ def get_fuel_advance_eligibility(db: Session, user: User, trip_id: int) -> dict:
         "load_id": trip.load_id,
         "payment_plan_id": plan.id,
         "funding_route": route,
+        "payment_mode": plan.mode,
         "client_paid_total": float(money(plan.client_paid_total)),
         "client_remaining": float(contract_remaining),
         "company_escrow_balance": float(escrow_available),

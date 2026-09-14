@@ -6,6 +6,8 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import EmailStr
 from sqlalchemy.orm import Session
 
+from controllers.activities_controller import list_company_activities
+
 from controllers.companies_controller import (
     attach_driver_to_company,
     create_driver_for_company,
@@ -23,6 +25,7 @@ from database import get_db
 from deps import get_current_user
 from models.models import Company, Driver, LoadProposal, User
 from schemas.schemas import (
+    ActivityItem,
     CompanyDetailResponse,
     CompanyDriverAttachRequest,
     CompanyDriverCreateRequest,
@@ -84,6 +87,15 @@ def _proposal_to_response(proposal: LoadProposal) -> LoadProposalResponse:
 
 def _trip_to_response(trip) -> TripResponse:
     return TripResponse.model_validate(trip)
+
+
+@router.get("/me/activities", response_model=list[ActivityItem])
+def get_my_activities(
+    limit: int = Query(20, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return list_company_activities(db, current_user, limit=limit)
 
 
 @router.get("/me", response_model=CompanyDetailResponse)

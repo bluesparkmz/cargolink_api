@@ -266,7 +266,11 @@ def remove(
 
 @router.get("", response_model=list[VehicleListItem])
 def list_all(
-    status: str | None = Query("disponivel", description="Filtrar por status do veiculo"),
+    vehicle_status: str | None = Query(
+        "disponivel",
+        alias="status",
+        description="Filtrar por status do veiculo",
+    ),
     available_only: bool = Query(True, description="So motoristas disponiveis"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -280,7 +284,7 @@ def list_all(
 
     vehicles = list_vehicles(
         db,
-        status_filter=status,
+        status_filter=vehicle_status,
         available_only=available_only,
     )
 
