@@ -321,13 +321,74 @@ def allocate_regular_client_payment(
             detail="Valor de pagamento inválido.",
         )
 
-    company_capacity = company_remaining_entitlement(plan)
-    company_credit = min(amount, company_capacity)
-    commission_credit = money(amount - company_credit)
+    rows = _installments(db, plan.id)
+    target = next(
+        (row for row in rows if money(row.paid_amount) < money(row.amount)),
+        None,
+    )
+    target_sequence = target.sequence if target is not None else 1
 
-    plan.client_paid_total = money(money(plan.client_paid_total) + amount)
-    plan.company_escrow_balance = money(
-        money(plan.company_escrow_balance) + company_credit
+    company_capacity = company_remaining_entitlement(plan)
+    remaining_commission = max(
+        Decimal("0.00"),
+        money(plan.commission_amount) - money(plan.commission_collected),
+    )
+
+    immediate_release = plan.mode == PAYMENT_MODE_SPLIT_50_50
+
+    if immediate_release:
+        selected_installment = int(
+            get_financial_setting(
+                db,
+                "split_commission_installment",
+                Decimal("1.00"),
+            )
+        )
+        if selected_installment not in {1, 2}:
+            selected_installment = 1
+
+        should_collect_now = (
+            target_sequence == selected_installment
+            or (
+                target_sequence > selected_installment
+                and remaining_commission > 0
+            )
+        )
+
+        commission_credit = (
+            min(amount, remaining_commission)
+            if should_collect_now
+            else Decimal("0.00")
+        )
+
+        company_credit = min(
+            money(amount - commission_credit),
+            company_capacity,
+        )
+
+        gap = money(amount - company_credit - commission_credit)
+        if gap > 0 and remaining_commission > commission_credit:
+            commission_credit = min(
+                remaining_commission,
+                money(commission_credit + gap),
+            )
+            company_credit = min(
+                money(amount - commission_credit),
+                company_capacity,
+            )
+
+        plan.company_released_total = money(
+            money(plan.company_released_total) + company_credit
+        )
+    else:
+        company_credit = min(amount, company_capacity)
+        commission_credit = money(amount - company_credit)
+        plan.company_escrow_balance = money(
+            money(plan.company_escrow_balance) + company_credit
+        )
+
+    plan.client_paid_total = money(
+        money(plan.client_paid_total) + amount
     )
     plan.commission_collected = money(
         money(plan.commission_collected) + commission_credit
@@ -339,8 +400,9 @@ def allocate_regular_client_payment(
     return {
         "company_credit": company_credit,
         "commission_credit": commission_credit,
+        "immediate_release": immediate_release,
+        "target_installment_sequence": target_sequence,
     }
-
 
 def record_direct_fuel_client_payment(
     db: Session,
@@ -524,6 +586,13 @@ def serialize_payment_plan(
         "commission_percent": float(money(plan.commission_percent)),
         "commission_amount": float(money(plan.commission_amount)),
         "commission_collected": float(money(plan.commission_collected)),
+        "split_commission_installment": int(
+            get_financial_setting(
+                db,
+                "split_commission_installment",
+                Decimal("1.00"),
+            )
+        ),
         "deadline_started_at": plan.deadline_started_at,
         "due_at": plan.due_at,
         "remaining_seconds_to_pay": remaining_seconds,

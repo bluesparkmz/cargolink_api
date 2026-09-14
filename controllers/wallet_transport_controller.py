@@ -227,11 +227,19 @@ def pay_accepted_proposal_from_wallet(
     allocation = allocate_regular_client_payment(db, plan, amount)
     company_credit = money(allocation["company_credit"])
     commission_credit = money(allocation["commission_credit"])
+    immediate_release = bool(allocation.get("immediate_release"))
 
     client_wallet.available_balance = money(available - amount)
-    company_wallet.pending_balance = money(
-        money(company_wallet.pending_balance) + company_credit
-    )
+
+    if company_credit > 0:
+        if immediate_release:
+            company_wallet.available_balance = money(
+                money(company_wallet.available_balance) + company_credit
+            )
+        else:
+            company_wallet.pending_balance = money(
+                money(company_wallet.pending_balance) + company_credit
+            )
 
     reference = f"FW{uuid4().hex[:16].upper()}"
     payment = Payment(
@@ -253,12 +261,21 @@ def pay_accepted_proposal_from_wallet(
                 if payment_info["installment"]
                 else "transport_payment"
             ),
+            "installment_sequence": allocation.get(
+                "target_installment_sequence"
+            ),
             "company_credit": float(company_credit),
             "commission_credit": float(commission_credit),
             "escrow_status": (
-                "held" if company_credit > 0 else "commission_only"
+                "released_immediate"
+                if immediate_release
+                else ("held" if company_credit > 0 else "commission_only")
             ),
-            "held_at": datetime.now(timezone.utc).isoformat(),
+            "released_at": (
+                datetime.now(timezone.utc).isoformat()
+                if immediate_release
+                else None
+            ),
         },
     )
     db.add(payment)
@@ -281,13 +298,26 @@ def pay_accepted_proposal_from_wallet(
         db.add(
             Transaction(
                 wallet_id=company_wallet.id,
-                transaction_type=TRANSACTION_TYPE_ESCROW_RECEIVED,
+                transaction_type=(
+                    "transport_payment_received"
+                    if immediate_release
+                    else TRANSACTION_TYPE_ESCROW_RECEIVED
+                ),
                 amount=company_credit,
-                status=TRANSACTION_STATUS_PENDING,
+                status=(
+                    TRANSACTION_STATUS_COMPLETED
+                    if immediate_release
+                    else TRANSACTION_STATUS_PENDING
+                ),
                 reference=reference,
                 description=(
-                    f"Valor em retenção da carga "
+                    f"Parcela disponível da carga "
                     f"{proposal.load.code if proposal.load else proposal.load_id}"
+                    if immediate_release
+                    else (
+                        f"Valor em retenção da carga "
+                        f"{proposal.load.code if proposal.load else proposal.load_id}"
+                    )
                 ),
             )
         )
@@ -298,11 +328,22 @@ def pay_accepted_proposal_from_wallet(
     company_notification = create_notification(
         db,
         user_id=company.user_id,
-        title="Pagamento recebido",
+        title="Parcela disponível" if immediate_release else "Pagamento recebido",
         body=(
-            f"O cliente pagou {amount:.2f} MT da carga "
-            f"{proposal.load.code if proposal.load else proposal.load_id}. "
-            f"Saldo do contrato: {client_remaining(plan):.2f} MT."
+            (
+                f"O cliente pagou {amount:.2f} MT. "
+                f"{company_credit:.2f} MT já estão disponíveis na carteira"
+                + (
+                    f" e {commission_credit:.2f} MT foram cobrados de comissão."
+                    if commission_credit > 0
+                    else "."
+                )
+            )
+            if immediate_release
+            else (
+                f"O cliente pagou {amount:.2f} MT da carga. "
+                f"Saldo do contrato: {client_remaining(plan):.2f} MT."
+            )
         ),
         notification_type="payment.installment_paid",
         payload={
@@ -310,6 +351,9 @@ def pay_accepted_proposal_from_wallet(
             "load_id": proposal.load_id,
             "trip_id": trip.id if trip else None,
             "amount": float(amount),
+            "company_credit": float(company_credit),
+            "commission_credit": float(commission_credit),
+            "immediate_release": immediate_release,
             "remaining_amount": float(client_remaining(plan)),
             "payment_plan_id": plan.id,
         },
@@ -322,7 +366,11 @@ def pay_accepted_proposal_from_wallet(
     db.refresh(company_notification)
     emit_notification(company_notification)
 
-    if trip is not None and trip.client_confirmed_at:
+    if (
+        not immediate_release
+        and trip is not None
+        and trip.client_confirmed_at
+    ):
         release_transport_escrow_for_trip(db, trip)
 
     return _payment_payload(
@@ -332,7 +380,6 @@ def pay_accepted_proposal_from_wallet(
         plan=plan,
         wallet=client_wallet,
     )
-
 
 def release_transport_escrow_for_trip(db: Session, trip: Trip) -> bool:
     try:

@@ -161,7 +161,6 @@ def _company_activity_status(proposal: LoadProposal, trip: Trip | None) -> str:
 
 
 def list_company_activities(db: Session, user: User, *, limit: int = 20) -> list[dict]:
-    # Atividades recentes da empresa autenticada: propostas e viagens.
     if user.user_type != "empresa":
         return []
 
@@ -169,57 +168,90 @@ def list_company_activities(db: Session, user: User, *, limit: int = 20) -> list
     if company is None:
         return []
 
+    items_by_load: dict[int, dict] = {}
+
+    trips = (
+        db.query(Trip)
+        .filter(Trip.company_id == company.id)
+        .order_by(Trip.created_at.desc())
+        .limit(limit * 2)
+        .all()
+    )
+    for trip in trips:
+        if trip.status in {"cancelada", "cancelado"}:
+            continue
+
+        load = db.query(Load).filter(Load.id == trip.load_id).first()
+        if load is None:
+            continue
+
+        proposal = (
+            db.query(LoadProposal)
+            .filter(
+                LoadProposal.load_id == load.id,
+                LoadProposal.company_id == company.id,
+            )
+            .order_by(LoadProposal.created_at.desc())
+            .first()
+        )
+
+        class _Fallback:
+            status = "aceite"
+
+        activity_at = (
+            trip.completed_at
+            or trip.started_at
+            or trip.en_route_pickup_at
+            or trip.created_at
+            or load.updated_at
+        )
+
+        items_by_load[load.id] = {
+            "load_id": load.id,
+            "code": load.code,
+            "origin": load.origin,
+            "destination": load.destination,
+            "load_type": load.load_type,
+            "weight": float(load.weight) if load.weight is not None else None,
+            "weight_unit": load.weight_unit,
+            "display_status": _company_activity_status(
+                proposal or _Fallback(),
+                trip,
+            ),
+            "activity_at": activity_at,
+            "trip_id": trip.id,
+            **_payment_snapshot_for_load(db, load),
+        }
+
     proposals = (
         db.query(LoadProposal)
         .filter(LoadProposal.company_id == company.id)
         .order_by(LoadProposal.created_at.desc())
-        .limit(limit)
+        .limit(limit * 2)
         .all()
     )
-
-    items: list[dict] = []
     for proposal in proposals:
+        if proposal.status in {"recusada", "cancelada"}:
+            continue
         load = proposal.load
-        if load is None:
+        if load is None or load.id in items_by_load:
             continue
 
-        trip = (
-            db.query(Trip)
-            .filter(
-                Trip.load_id == load.id,
-                Trip.company_id == company.id,
-            )
-            .order_by(Trip.created_at.desc())
-            .first()
-        )
+        items_by_load[load.id] = {
+            "load_id": load.id,
+            "code": load.code,
+            "origin": load.origin,
+            "destination": load.destination,
+            "load_type": load.load_type,
+            "weight": float(load.weight) if load.weight is not None else None,
+            "weight_unit": load.weight_unit,
+            "display_status": _company_activity_status(proposal, None),
+            "activity_at": proposal.created_at,
+            "trip_id": None,
+            **_payment_snapshot_for_load(db, load),
+        }
 
-        activity_at = proposal.created_at
-        if trip is not None:
-            activity_at = (
-                trip.completed_at
-                or trip.started_at
-                or trip.en_route_pickup_at
-                or trip.created_at
-                or proposal.created_at
-            )
-
-        payment = _payment_snapshot_for_load(db, load)
-
-        items.append(
-            {
-                "load_id": load.id,
-                "code": load.code,
-                "origin": load.origin,
-                "destination": load.destination,
-                "load_type": load.load_type,
-                "weight": float(load.weight) if load.weight is not None else None,
-                "weight_unit": load.weight_unit,
-                "display_status": _company_activity_status(proposal, trip),
-                "activity_at": activity_at,
-                "trip_id": trip.id if trip else None,
-                **payment,
-            }
-        )
-
+    items = list(items_by_load.values())
     items.sort(key=lambda row: row["activity_at"], reverse=True)
     return items[:limit]
+

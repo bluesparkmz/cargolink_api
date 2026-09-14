@@ -4,11 +4,13 @@ Rotas de cargas: publicar, consultar, imagens e propostas.
 
 from fastapi import APIRouter, Depends, Query, File, UploadFile, Form
 from sqlalchemy.orm import Session
+from pydantic import BaseModel, Field
 
 from datetime import date
 from typing import Annotated
 
 from constants import LOAD_FILL_TYPES, LOAD_TYPES
+from controllers.contract_cancellation_controller import cancel_transport_contract
 from controllers.loads_controller import (
     accept_proposal,
     add_load_image,
@@ -45,6 +47,10 @@ from schemas.schemas import (
 )
 
 router = APIRouter()
+
+
+class CancelTransportRequest(BaseModel):
+    reason: str = Field(..., min_length=5, max_length=500)
 
 
 def _to_list_item(load: Load) -> LoadListItem:
@@ -235,6 +241,21 @@ def patch_load(
 ):
     """Cliente atualiza a própria carga."""
     return update_load(db, current_user, load_id, data)
+
+
+@router.post("/{load_id}/cancel-transport")
+def cancel_transport(
+    load_id: int,
+    data: CancelTransportRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return cancel_transport_contract(
+        db,
+        current_user,
+        load_id,
+        reason=data.reason,
+    )
 
 
 @router.delete("/{load_id}", status_code=204)

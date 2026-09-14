@@ -113,16 +113,19 @@ def get_fuel_advance_eligibility(db: Session, user: User, trip_id: int) -> dict:
     plan = _plan_for_trip(db, trip)
 
     reasons: list[str] = []
-    if trip.status in {"concluida", "cancelada", "cancelado"}:
+    if trip.status in {"concluida", "concluido", "cancelada", "cancelado"}:
         reasons.append("A viagem já está encerrada.")
 
     vehicle = None
     if trip.vehicle_id is None:
-        reasons.append("É necessário atribuir um camião à viagem.")
+        reasons.append("Atribua um camião à viagem antes de solicitar combustível.")
     else:
         vehicle = (
             db.query(Vehicle)
-            .filter(Vehicle.id == trip.vehicle_id, Vehicle.company_id == company.id)
+            .filter(
+                Vehicle.id == trip.vehicle_id,
+                Vehicle.company_id == company.id,
+            )
             .first()
         )
         if vehicle is None:
@@ -134,24 +137,15 @@ def get_fuel_advance_eligibility(db: Session, user: User, trip_id: int) -> dict:
         / Decimal("100")
     )
     reserved, paid = _advance_totals(db, trip.id)
-    fuel_limit_remaining = max(Decimal("0.00"), money(max_allowed - reserved))
+    fuel_limit_remaining = max(
+        Decimal("0.00"),
+        money(max_allowed - reserved),
+    )
 
     escrow_available = money(plan.company_escrow_balance)
     contract_remaining = client_remaining(plan)
 
-    deferred_modes = {
-        "prazo_apos_descarga",
-        "prazo_desde_carregamento",
-    }
-
-    # Cargas a prazo não devem depender de dinheiro congelado.
-    # A requisição de combustível vai sempre ao cliente, que pode
-    # Pagar ou Recusar. Se pagar, o valor conta como pagamento parcial
-    # do MESMO contrato de transporte.
-    if plan.mode in deferred_modes:
-        route = "client_approval"
-        currently_available = min(fuel_limit_remaining, contract_remaining)
-    elif escrow_available > 0:
+    if plan.mode == "integral" and escrow_available > 0:
         route = "automatic_escrow"
         currently_available = min(fuel_limit_remaining, escrow_available)
     else:
@@ -160,6 +154,11 @@ def get_fuel_advance_eligibility(db: Session, user: User, trip_id: int) -> dict:
 
     if fuel_limit_remaining <= 0:
         reasons.append("O limite de 50% para combustível já foi atingido.")
+    if contract_remaining <= 0 and route == "client_approval":
+        reasons.append(
+            "O contrato já está totalmente pago; não existe saldo por pagar "
+            "para uma nova requisição de combustível."
+        )
     if currently_available <= 0 and not reasons:
         reasons.append("Não existe valor disponível para este pedido.")
 
@@ -186,13 +185,13 @@ def get_fuel_advance_eligibility(db: Session, user: User, trip_id: int) -> dict:
                 "brand": vehicle.brand,
                 "model_name": vehicle.model_name,
             }
-            if vehicle else None
+            if vehicle
+            else None
         ),
         "can_request": not reasons and currently_available > 0,
         "reasons": reasons,
         "currency": "MT",
     }
-
 
 def _notify(db: Session, *, user_id: int, title: str, body: str, notification_type: str, payload: dict):
     return create_notification(
@@ -445,7 +444,8 @@ def list_client_fuel_requests(db: Session, user: User) -> list[dict]:
         .filter(Load.client_id == client.id)
         .all()
     )
-    trip_ids = [row.id for row in trips]
+    trip_by_id = {row.id: row for row in trips}
+    trip_ids = list(trip_by_id)
     if not trip_ids:
         return []
 
@@ -455,15 +455,51 @@ def list_client_fuel_requests(db: Session, user: User) -> list[dict]:
         .order_by(FuelAdvance.created_at.desc())
         .all()
     )
+
+    company_ids = {row.company_id for row in rows}
+    companies = (
+        {
+            row.id: row
+            for row in db.query(Company)
+            .filter(Company.id.in_(company_ids))
+            .all()
+        }
+        if company_ids
+        else {}
+    )
+
+    load_ids = {trip.load_id for trip in trips}
+    loads = (
+        {
+            row.id: row
+            for row in db.query(Load)
+            .filter(Load.id.in_(load_ids))
+            .all()
+        }
+        if load_ids
+        else {}
+    )
+
     result = []
     for row in rows:
         item = serialize_fuel_advance(row)
-        trip = next((t for t in trips if t.id == row.trip_id), None)
+        trip = trip_by_id.get(row.trip_id)
+        load = loads.get(trip.load_id) if trip else None
+        company = companies.get(row.company_id)
+
         item["load_id"] = trip.load_id if trip else None
+        item["load_code"] = load.code if load else None
+        item["company_name"] = (
+            company.company_name if company else "Transportadora"
+        )
+        item["requested_by_label"] = (
+            company.company_name if company else "Transportadora"
+        )
+        item["request_source"] = "transportadora"
         item["action_required"] = row.status == STATUS_WAITING_CLIENT
         result.append(item)
-    return result
 
+    return result
 
 def pay_client_fuel_request(db: Session, user: User, advance_id: int) -> dict:
     advance, trip, plan = _get_client_advance(db, user, advance_id)

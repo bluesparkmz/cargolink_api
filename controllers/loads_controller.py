@@ -804,15 +804,53 @@ def update_load(db: Session, user: User, load_id: int, data: LoadUpdateRequest) 
 
 
 def delete_load(db: Session, user: User, load_id: int) -> None:
-    """Cliente cancela carga."""
     client = get_client_or_403(db, user)
     load = get_load_detail(db, load_id)
     if load.client_id != client.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Carga de outro cliente")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Carga de outro cliente",
+        )
+
+    trip = db.query(Trip).filter(Trip.load_id == load.id).first()
+    if trip is not None and trip.status not in {"cancelada", "cancelado"}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Esta carga já possui um transporte aceite. "
+                "Use o cancelamento do transporte para garantir o reembolso."
+            ),
+        )
+
+    if load.status != LOAD_STATUS_AVAILABLE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Use o cancelamento do transporte para esta carga.",
+        )
+
+    pending = (
+        db.query(LoadProposal)
+        .filter(
+            LoadProposal.load_id == load.id,
+            LoadProposal.status.in_(["pendente", "em_negociacao"]),
+        )
+        .all()
+    )
+    for proposal in pending:
+        proposal.status = "cancelada"
+
+    if pending:
+        (
+            db.query(ProposalNegotiation)
+            .filter(
+                ProposalNegotiation.proposal_id.in_([p.id for p in pending]),
+                ProposalNegotiation.status == NEGOTIATION_STATUS_PENDING,
+            )
+            .update({"status": "cancelada"}, synchronize_session=False)
+        )
 
     load.status = "cancelada"
     db.commit()
-
 
 def add_load_image(
     db: Session, user: User, load_id: int, data: LoadImageCreateRequest
@@ -856,7 +894,11 @@ def create_proposal(
 
     exists = (
         db.query(LoadProposal)
-        .filter(LoadProposal.load_id == load_id, LoadProposal.company_id == company.id)
+        .filter(
+            LoadProposal.load_id == load_id,
+            LoadProposal.company_id == company.id,
+            ~LoadProposal.status.in_(["recusada", "cancelada"]),
+        )
         .first()
     )
     if exists:
@@ -963,7 +1005,7 @@ def accept_proposal(db: Session, user: User, load_id: int, proposal_id: int) -> 
         )
 
     existing_trip = db.query(Trip).filter(Trip.load_id == load_id).first()
-    if existing_trip:
+    if existing_trip and existing_trip.status not in {"cancelada", "cancelado"}:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Esta carga já tem viagem associada",
@@ -1002,13 +1044,63 @@ def accept_proposal(db: Session, user: User, load_id: int, proposal_id: int) -> 
     load.status = LOAD_STATUS_ACCEPTED
     # A proposta aceite define apenas a empresa vencedora.
     # O camião e o motorista serão escolhidos manualmente pela empresa.
-    trip = Trip(
-        load_id=load_id,
-        company_id=proposal.company_id,
-        driver_id=None,
-        vehicle_id=None,
-    )
-    db.add(trip)
+    if existing_trip is not None:
+        # Trip.load_id é UNIQUE. Quando uma carga cancelada volta ao mercado,
+        # reutilizamos o registo da viagem, mas limpamos dados operacionais
+        # da viagem anterior para não misturar GPS, provas, paragens,
+        # actividades e requisições de combustível com o novo contrato.
+        from models.models import (
+            FuelAdvance,
+            TripActivity,
+            TripEvidence,
+            TripEvidenceStage,
+            TripLocation,
+            TripStop,
+        )
+
+        db.query(TripLocation).filter(
+            TripLocation.trip_id == existing_trip.id
+        ).delete(synchronize_session=False)
+        db.query(TripEvidenceStage).filter(
+            TripEvidenceStage.trip_id == existing_trip.id
+        ).delete(synchronize_session=False)
+        db.query(TripEvidence).filter(
+            TripEvidence.trip_id == existing_trip.id
+        ).delete(synchronize_session=False)
+        db.query(TripStop).filter(
+            TripStop.trip_id == existing_trip.id
+        ).delete(synchronize_session=False)
+        db.query(FuelAdvance).filter(
+            FuelAdvance.trip_id == existing_trip.id
+        ).delete(synchronize_session=False)
+        db.query(TripActivity).filter(
+            TripActivity.trip_id == existing_trip.id
+        ).delete(synchronize_session=False)
+
+        trip = existing_trip
+        trip.company_id = proposal.company_id
+        trip.driver_id = None
+        trip.vehicle_id = None
+        trip.status = "aguardando_inicio"
+        trip.en_route_pickup_at = None
+        trip.arrived_pickup_at = None
+        trip.loaded_at = None
+        trip.started_at = None
+        trip.arrived_at = None
+        trip.client_confirmed_at = None
+        trip.completed_at = None
+        trip.total_distance_km = None
+        trip.traveled_distance_km = None
+        trip.estimated_time = None
+    else:
+        trip = Trip(
+            load_id=load_id,
+            company_id=proposal.company_id,
+            driver_id=None,
+            vehicle_id=None,
+        )
+        db.add(trip)
+
     db.flush()
 
     from controllers.payment_plan_controller import (
