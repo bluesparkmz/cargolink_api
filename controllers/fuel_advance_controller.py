@@ -47,16 +47,12 @@ def _now() -> datetime:
 
 
 def _company(db: Session, user: User) -> Company:
-    if user.user_type != "empresa":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Apenas empresas podem solicitar combustível.",
-        )
+    """Resolve a transportadora pelo perfil Company."""
     company = db.query(Company).filter(Company.user_id == user.id).first()
     if company is None:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Empresa não encontrada.",
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Apenas empresas transportadoras podem solicitar combustível.",
         )
     return company
 
@@ -168,6 +164,8 @@ def get_fuel_advance_eligibility(db: Session, user: User, trip_id: int) -> dict:
         "payment_plan_id": plan.id,
         "funding_route": route,
         "payment_mode": plan.mode,
+        "payment_required_before_fuel": False,
+        "requires_client_approval": route == "client_approval",
         "client_paid_total": float(money(plan.client_paid_total)),
         "client_remaining": float(contract_remaining),
         "company_escrow_balance": float(escrow_available),
@@ -192,6 +190,73 @@ def get_fuel_advance_eligibility(db: Session, user: User, trip_id: int) -> dict:
         "reasons": reasons,
         "currency": "MT",
     }
+
+
+def list_fuel_advance_candidates(db: Session, user: User) -> list[dict]:
+    """Lista todas as viagens activas da empresa, sem filtrar por valor pago."""
+    company = _company(db, user)
+    trips = (
+        db.query(Trip)
+        .filter(
+            Trip.company_id == company.id,
+            ~Trip.status.in_(["concluida", "concluido", "cancelada", "cancelado"]),
+        )
+        .order_by(Trip.created_at.desc())
+        .all()
+    )
+
+    result: list[dict] = []
+    for trip in trips:
+        load = db.query(Load).filter(Load.id == trip.load_id).first()
+        try:
+            eligibility = get_fuel_advance_eligibility(db, user, trip.id)
+            result.append({
+                "trip_id": trip.id,
+                "trip_status": trip.status,
+                "load_id": trip.load_id,
+                "load_code": load.code if load else None,
+                "origin": load.origin if load else None,
+                "destination": load.destination if load else None,
+                "vehicle_id": trip.vehicle_id,
+                "driver_id": trip.driver_id,
+                "payment_mode": eligibility.get("payment_mode"),
+                "payment_required_before_fuel": False,
+                "funding_route": eligibility.get("funding_route"),
+                "requires_client_approval": eligibility.get("requires_client_approval", True),
+                "client_paid_total": eligibility.get("client_paid_total", 0),
+                "client_remaining": eligibility.get("client_remaining", 0),
+                "remaining_fuel_limit": eligibility.get("remaining_fuel_limit", 0),
+                "remaining_requestable_amount": eligibility.get("remaining_requestable_amount", 0),
+                "vehicle": eligibility.get("vehicle"),
+                "can_request": eligibility.get("can_request", False),
+                "reasons": eligibility.get("reasons", []),
+                "currency": "MT",
+            })
+        except HTTPException as exc:
+            result.append({
+                "trip_id": trip.id,
+                "trip_status": trip.status,
+                "load_id": trip.load_id,
+                "load_code": load.code if load else None,
+                "origin": load.origin if load else None,
+                "destination": load.destination if load else None,
+                "vehicle_id": trip.vehicle_id,
+                "driver_id": trip.driver_id,
+                "payment_mode": getattr(load, "payment_mode", None) or "integral",
+                "payment_required_before_fuel": False,
+                "funding_route": "client_approval",
+                "requires_client_approval": True,
+                "client_paid_total": 0,
+                "client_remaining": 0,
+                "remaining_fuel_limit": 0,
+                "remaining_requestable_amount": 0,
+                "vehicle": None,
+                "can_request": False,
+                "reasons": [str(exc.detail)],
+                "currency": "MT",
+            })
+    return result
+
 
 def _notify(db: Session, *, user_id: int, title: str, body: str, notification_type: str, payload: dict):
     return create_notification(

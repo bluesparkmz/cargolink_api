@@ -31,6 +31,7 @@ from controllers.fuel_advance_controller import (
     create_fuel_advance_request,
     get_fuel_advance_eligibility,
     list_client_fuel_requests,
+    list_fuel_advance_candidates,
     list_fuel_advances,
     pay_client_fuel_request,
     reject_client_fuel_request,
@@ -241,6 +242,16 @@ def client_reject_fuel_request_route(
         current_user,
         advance_id,
     )
+
+
+# Empresa: TODAS as viagens activas candidatas a combustível.
+# Nao existe filtro por "carga paga".
+@router.get("/fuel-advances/candidates")
+def fuel_advance_candidates_route(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return list_fuel_advance_candidates(db, current_user)
 
 
 # Empresa: pedido de adiantamento de combustível.

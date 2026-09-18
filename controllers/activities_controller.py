@@ -161,9 +161,11 @@ def _company_activity_status(proposal: LoadProposal, trip: Trip | None) -> str:
 
 
 def list_company_activities(db: Session, user: User, *, limit: int = 20) -> list[dict]:
-    if user.user_type != "empresa":
-        return []
+    """Feed operacional da transportadora.
 
+    O perfil Company e a fonte de verdade. Contas antigas/migradas podem
+    conservar user_type diferente apesar de ja possuirem Company associado.
+    """
     company = db.query(Company).filter(Company.user_id == user.id).first()
     if company is None:
         return []
@@ -220,6 +222,8 @@ def list_company_activities(db: Session, user: User, *, limit: int = 20) -> list
             ),
             "activity_at": activity_at,
             "trip_id": trip.id,
+            "activity_source": "trip",
+            "company_id": company.id,
             **_payment_snapshot_for_load(db, load),
         }
 
@@ -248,6 +252,8 @@ def list_company_activities(db: Session, user: User, *, limit: int = 20) -> list
             "display_status": _company_activity_status(proposal, None),
             "activity_at": proposal.created_at,
             "trip_id": None,
+            "activity_source": "proposal",
+            "company_id": company.id,
             **_payment_snapshot_for_load(db, load),
         }
 
