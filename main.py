@@ -56,6 +56,15 @@ async def lifespan(app: FastAPI):
             conn.execute(text("ALTER TABLE trips ADD COLUMN IF NOT EXISTS en_route_pickup_at TIMESTAMP;"))
             conn.execute(text("ALTER TABLE trips ADD COLUMN IF NOT EXISTS arrived_pickup_at TIMESTAMP;"))
             conn.execute(text("ALTER TABLE trips ADD COLUMN IF NOT EXISTS loaded_at TIMESTAMP;"))
+            # Colunas GPS presentes nos modelos actuais, mas que versões
+            # antigas da BD podem ainda não ter. Sem estas colunas, qualquer
+            # joinedload de Driver/Vehicle em /trips/{id} pode gerar HTTP 500.
+            conn.execute(text("ALTER TABLE drivers ADD COLUMN IF NOT EXISTS latitude_atual NUMERIC(10,7);"))
+            conn.execute(text("ALTER TABLE drivers ADD COLUMN IF NOT EXISTS longitude_atual NUMERIC(10,7);"))
+            conn.execute(text("ALTER TABLE drivers ADD COLUMN IF NOT EXISTS location_updated_at TIMESTAMP;"))
+            conn.execute(text("ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS latitude_atual NUMERIC(10,7);"))
+            conn.execute(text("ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS longitude_atual NUMERIC(10,7);"))
+            conn.execute(text("ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS location_updated_at TIMESTAMP;"))
             conn.execute(text("ALTER TABLE trip_stops ADD COLUMN IF NOT EXISTS created_by_user_id INTEGER;"))
             conn.execute(text("ALTER TABLE trip_stops ADD COLUMN IF NOT EXISTS created_by_type VARCHAR(30);"))
             conn.execute(text("ALTER TABLE trip_stops ADD COLUMN IF NOT EXISTS status VARCHAR(30);"))
