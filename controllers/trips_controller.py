@@ -31,7 +31,7 @@ from constants import (
 from controllers.notifications_controller import create_notification, emit_notification
 from controllers.realtime_events import emit_to_rooms
 from controllers.wallet_transport_controller import release_transport_escrow_for_trip
-from models.models import Client, Company, Driver, Load, Trip, TripActivity, TripLocation, User, Vehicle
+from models.models import Client, Company, Driver, Load, Trip, TripActivity, TripEvidenceStage, TripLocation, User, Vehicle
 from schemas.schemas import TripLocationCreateRequest, TripStartRequest
 
 
@@ -614,6 +614,24 @@ def confirm_loaded_trip(db: Session, user: User, trip_id: int) -> Trip:
             detail="Carga só pode ser confirmada como carregada após a chegada ao local de coleta",
         )
 
+    pickup_evidence = (
+        db.query(TripEvidenceStage)
+        .filter(
+            TripEvidenceStage.trip_id == trip.id,
+            TripEvidenceStage.stage == "pickup",
+            TripEvidenceStage.finalized_at.isnot(None),
+        )
+        .first()
+    )
+    if pickup_evidence is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Finalize primeiro a prova de carregamento "
+                "com 3 a 5 fotografias."
+            ),
+        )
+
     trip.status = TRIP_STATUS_LOADED
     trip.loaded_at = datetime.now(timezone.utc)
 
@@ -737,6 +755,24 @@ def arrive_trip(db: Session, user: User, trip_id: int) -> Trip:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Viagem deve estar em curso para confirmar chegada",
+        )
+
+    delivery_evidence = (
+        db.query(TripEvidenceStage)
+        .filter(
+            TripEvidenceStage.trip_id == trip.id,
+            TripEvidenceStage.stage == "delivery",
+            TripEvidenceStage.finalized_at.isnot(None),
+        )
+        .first()
+    )
+    if delivery_evidence is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Finalize primeiro as provas de entrega: "
+                "3 a 5 fotografias e o comprovativo POD."
+            ),
         )
 
     trip.status = TRIP_STATUS_WAITING_CLIENT

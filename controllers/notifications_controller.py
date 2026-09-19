@@ -1,13 +1,42 @@
 """
-Controller de notificações in-app.
+Notificações in-app com escopo por perfil.
+
+Regra Driver:
+- mostra somente assuntos operacionais do motorista/viagem;
+- nunca mostra propostas, negociações, pagamentos, carteira,
+  comissão ou requisições financeiras.
 """
 
 from fastapi import HTTPException, status
-from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy import func, or_
+from sqlalchemy.orm import Query, Session
 
 from controllers.realtime_events import emit_to_user
 from models.models import Notification, User
+
+
+DRIVER_EXACT_NOTIFICATION_TYPES = {
+    "rating.created",
+    "message.created",
+    "transport.cancelled",
+}
+
+
+def _notification_query(db: Session, user: User) -> Query:
+    query = db.query(Notification).filter(Notification.user_id == user.id)
+
+    if user.user_type == "motorista":
+        query = query.filter(
+            or_(
+                Notification.notification_type.like("trip.%"),
+                Notification.notification_type.like("driver.%"),
+                Notification.notification_type.in_(
+                    DRIVER_EXACT_NOTIFICATION_TYPES
+                ),
+            )
+        )
+
+    return query
 
 
 def create_notification(
@@ -19,7 +48,6 @@ def create_notification(
     notification_type: str | None = None,
     payload: dict | None = None,
 ) -> Notification:
-    """Cria notificacao pendente na sessao atual."""
     notification = Notification(
         user_id=user_id,
         title=title,
@@ -33,7 +61,6 @@ def create_notification(
 
 
 def emit_notification(notification: Notification) -> None:
-    """Envia notificacao criada para o utilizador conectado via WebSocket."""
     emit_to_user(
         notification.user_id,
         {
@@ -51,28 +78,32 @@ def list_notifications(
     limit: int = 50,
     offset: int = 0,
 ) -> list[Notification]:
-    """Lista notificações do utilizador."""
-    query = db.query(Notification).filter(Notification.user_id == user.id)
+    query = _notification_query(db, user)
     if unread_only:
         query = query.filter(Notification.read.is_(False))
-    return query.order_by(Notification.created_at.desc()).offset(offset).limit(limit).all()
-
-
-def count_unread(db: Session, user: User) -> int:
-    """Total de notificações não lidas."""
     return (
-        db.query(func.count(Notification.id))
-        .filter(Notification.user_id == user.id, Notification.read.is_(False))
-        .scalar()
-        or 0
+        query.order_by(Notification.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
     )
 
 
-def mark_notification_read(db: Session, user: User, notification_id: int) -> Notification:
-    """Marca uma notificação como lida."""
+def count_unread(db: Session, user: User) -> int:
+    query = _notification_query(db, user).filter(
+        Notification.read.is_(False)
+    )
+    return query.with_entities(func.count(Notification.id)).scalar() or 0
+
+
+def mark_notification_read(
+    db: Session,
+    user: User,
+    notification_id: int,
+) -> Notification:
     notification = (
-        db.query(Notification)
-        .filter(Notification.id == notification_id, Notification.user_id == user.id)
+        _notification_query(db, user)
+        .filter(Notification.id == notification_id)
         .first()
     )
     if notification is None:
@@ -87,11 +118,12 @@ def mark_notification_read(db: Session, user: User, notification_id: int) -> Not
 
 
 def mark_all_read(db: Session, user: User) -> int:
-    """Marca todas como lidas; devolve quantidade atualizada."""
-    updated = (
-        db.query(Notification)
-        .filter(Notification.user_id == user.id, Notification.read.is_(False))
-        .update({Notification.read: True}, synchronize_session=False)
+    query = _notification_query(db, user).filter(
+        Notification.read.is_(False)
+    )
+    updated = query.update(
+        {Notification.read: True},
+        synchronize_session=False,
     )
     db.commit()
     return updated
