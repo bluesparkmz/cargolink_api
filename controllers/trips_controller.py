@@ -19,6 +19,7 @@ from constants import (
     TRIP_LOCATION_HEARTBEAT_SECONDS,
     TRIP_LOCATION_MIN_DISTANCE_METERS,
     TRIP_LOCATION_MIN_INTERVAL_SECONDS,
+    TRIP_EXECUTION_STATUSES,
     TRIP_STATUS_ARRIVED_PICKUP,
     TRIP_STATUS_COMPLETED,
     TRIP_STATUS_EN_ROUTE_PICKUP,
@@ -27,6 +28,7 @@ from constants import (
     TRIP_STATUS_WAITING,
     TRIP_STATUS_WAITING_CLIENT,
     VEHICLE_STATUS_AVAILABLE,
+    VEHICLE_STATUS_UNAVAILABLE,
 )
 from controllers.notifications_controller import create_notification, emit_notification
 from controllers.realtime_events import emit_to_rooms
@@ -332,6 +334,32 @@ def _trip_user_ids(db: Session, trip: Trip) -> set[int]:
     return user_ids
 
 
+def _ensure_driver_has_no_other_active_trip(
+    db: Session,
+    driver: Driver,
+    trip_id: int,
+) -> None:
+    """Impede o motorista de executar duas cargas ao mesmo tempo."""
+    active_trip = (
+        db.query(Trip)
+        .filter(
+            Trip.id != trip_id,
+            Trip.driver_id == driver.id,
+            Trip.status.in_(TRIP_EXECUTION_STATUSES),
+        )
+        .order_by(Trip.created_at.desc())
+        .first()
+    )
+    if active_trip is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Conclua primeiro a viagem em andamento "
+                f"(#{active_trip.id}) para iniciar esta carga."
+            ),
+        )
+
+
 def _trip_status_event_payload(db: Session, trip: Trip) -> dict:
     """Monta payload realtime com contexto de motorista/veiculo para cliente e empresa."""
     driver = db.query(Driver).options(joinedload(Driver.user)).filter(Driver.id == trip.driver_id).first()
@@ -492,9 +520,9 @@ def assign_vehicle_to_trip(db: Session, user: User, trip_id: int, vehicle_id: in
     if not driver.available:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='O motorista deste camiao nao esta disponivel')
 
-    if db.query(Trip).filter(Trip.id != trip.id, Trip.vehicle_id == vehicle.id, Trip.status != TRIP_STATUS_COMPLETED).first():
+    if db.query(Trip).filter(Trip.id != trip.id, Trip.vehicle_id == vehicle.id, Trip.status.in_(TRIP_EXECUTION_STATUSES)).first():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Este camiao ja esta atribuido a outra viagem ativa')
-    if db.query(Trip).filter(Trip.id != trip.id, Trip.driver_id == driver.id, Trip.status != TRIP_STATUS_COMPLETED).first():
+    if db.query(Trip).filter(Trip.id != trip.id, Trip.driver_id == driver.id, Trip.status.in_(TRIP_EXECUTION_STATUSES)).first():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='O motorista deste camiao ja esta atribuido a outra viagem ativa')
 
     trip.vehicle_id = vehicle.id
@@ -529,6 +557,8 @@ def start_pickup_trip(
     if driver is None or trip.driver_id != driver.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Viagem de outro motorista")
 
+    _ensure_driver_has_no_other_active_trip(db, driver, trip.id)
+
     if trip.status != TRIP_STATUS_WAITING:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -546,6 +576,10 @@ def start_pickup_trip(
     load = db.query(Load).filter(Load.id == trip.load_id).first()
     if load:
         load.status = LOAD_STATUS_EN_ROUTE_PICKUP
+
+    driver.available = False
+    if trip.vehicle is not None:
+        trip.vehicle.status = VEHICLE_STATUS_UNAVAILABLE
 
     db.commit()
     db.refresh(trip)
@@ -585,6 +619,8 @@ def arrive_pickup_trip(db: Session, user: User, trip_id: int) -> Trip:
     driver = db.query(Driver).filter(Driver.user_id == user.id).first()
     if driver is None or trip.driver_id != driver.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Viagem de outro motorista")
+
+    _ensure_driver_has_no_other_active_trip(db, driver, trip.id)
 
     if trip.status != TRIP_STATUS_EN_ROUTE_PICKUP:
         raise HTTPException(
@@ -711,6 +747,8 @@ def start_trip(db: Session, user: User, trip_id: int, data: TripStartRequest) ->
     if driver is None or trip.driver_id != driver.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Viagem de outro motorista")
 
+    _ensure_driver_has_no_other_active_trip(db, driver, trip.id)
+
     if trip.status not in (TRIP_STATUS_LOADED, TRIP_STATUS_WAITING):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -808,6 +846,12 @@ def arrive_trip(db: Session, user: User, trip_id: int) -> Trip:
     load = db.query(Load).filter(Load.id == trip.load_id).first()
     if load:
         load.status = LOAD_STATUS_WAITING_CLIENT
+
+    # Para o motorista, o trabalho termina na entrega. A confirmação posterior
+    # do cliente mantém o acerto comercial, mas não bloqueia uma nova carga.
+    driver.available = True
+    if trip.vehicle is not None:
+        trip.vehicle.status = VEHICLE_STATUS_AVAILABLE
 
     db.commit()
     db.refresh(trip)

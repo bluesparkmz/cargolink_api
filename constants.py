@@ -54,6 +54,15 @@ TRIP_STATUS_STARTED = "viagem_iniciada"
 TRIP_STATUS_WAITING_CLIENT = "aguardando_cliente"
 TRIP_STATUS_COMPLETED = "concluida"
 
+# Estados em que o motorista está operacionalmente ocupado. Uma viagem que
+# aguarda apenas a confirmação do cliente já não bloqueia uma nova recolha.
+TRIP_EXECUTION_STATUSES = [
+    TRIP_STATUS_EN_ROUTE_PICKUP,
+    TRIP_STATUS_ARRIVED_PICKUP,
+    TRIP_STATUS_LOADED,
+    TRIP_STATUS_STARTED,
+]
+
 # GPS da viagem: controla quantos pontos entram no historico da rota.
 TRIP_LOCATION_MIN_INTERVAL_SECONDS = 10
 TRIP_LOCATION_MIN_DISTANCE_METERS = 50
@@ -70,9 +79,8 @@ TRIP_GROUP_STATUSES = {
         TRIP_STATUS_ARRIVED_PICKUP,
         TRIP_STATUS_LOADED,
         TRIP_STATUS_STARTED,
-        TRIP_STATUS_WAITING_CLIENT,
     ],
-    TRIP_GROUP_COMPLETED: [TRIP_STATUS_COMPLETED],
+    TRIP_GROUP_COMPLETED: [TRIP_STATUS_WAITING_CLIENT, TRIP_STATUS_COMPLETED],
 }
 
 # Tipos de paragem durante a viagem
