@@ -321,6 +321,7 @@ async def _handle_driver_location(websocket: WebSocket, db: Session, user: User,
             "traveled_distance_km": payload.traveled_distance_km,
             "stored_location_id": stored_location.id if stored_location else None,
             "stored_location_created_at": stored_location.created_at if stored_location else None,
+            "phase": trip.status,
         },
     }
     await connection_manager.broadcast_rooms(_event_rooms_for_trip(trip), event)

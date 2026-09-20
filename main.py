@@ -56,6 +56,9 @@ async def lifespan(app: FastAPI):
             conn.execute(text("ALTER TABLE trips ADD COLUMN IF NOT EXISTS en_route_pickup_at TIMESTAMP;"))
             conn.execute(text("ALTER TABLE trips ADD COLUMN IF NOT EXISTS arrived_pickup_at TIMESTAMP;"))
             conn.execute(text("ALTER TABLE trips ADD COLUMN IF NOT EXISTS loaded_at TIMESTAMP;"))
+            conn.execute(text("ALTER TABLE trips ADD COLUMN IF NOT EXISTS pickup_distance_km NUMERIC(10,2);"))
+            conn.execute(text("ALTER TABLE trips ADD COLUMN IF NOT EXISTS pickup_estimated_time TEXT;"))
+            conn.execute(text("ALTER TABLE trip_locations ADD COLUMN IF NOT EXISTS phase VARCHAR(40);"))
             # Colunas GPS presentes nos modelos actuais, mas que versões
             # antigas da BD podem ainda não ter. Sem estas colunas, qualquer
             # joinedload de Driver/Vehicle em /trips/{id} pode gerar HTTP 500.

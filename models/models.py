@@ -313,6 +313,8 @@ class Trip(Base):
         "distancia_percorrida_km", Numeric(10, 2)
     )
     estimated_time: Mapped[str | None] = mapped_column("tempo_estimado", Text)
+    pickup_distance_km: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+    pickup_estimated_time: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     load: Mapped[Load] = relationship(back_populates="trip")
@@ -338,6 +340,7 @@ class TripLocation(Base):
     latitude: Mapped[Decimal] = mapped_column(Numeric(10, 7), nullable=False)
     longitude: Mapped[Decimal] = mapped_column(Numeric(10, 7), nullable=False)
     speed: Mapped[Decimal | None] = mapped_column("velocidade", Numeric(10, 2))
+    phase: Mapped[str | None] = mapped_column(String(40))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     trip: Mapped[Trip] = relationship(back_populates="locations")
@@ -885,4 +888,3 @@ class TripEvidenceStage(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now()
     )
-

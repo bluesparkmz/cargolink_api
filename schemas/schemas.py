@@ -866,6 +866,8 @@ class TripResponse(BaseModel):
     total_distance_km: float | None = None
     traveled_distance_km: float | None = None
     estimated_time: str | None = None
+    pickup_distance_km: float | None = None
+    pickup_estimated_time: str | None = None
     created_at: datetime
     load: TripLoadSummary | None = None
     vehicle: TripVehicleSummary | None = None
@@ -888,6 +890,13 @@ class TripStartRequest(BaseModel):
     estimated_time: str | None = None
 
 
+class TripPickupStartRequest(BaseModel):
+    """Iniciar deslocamento à origem com estimativa calculada pelo mapa."""
+
+    pickup_distance_km: float | None = Field(None, ge=0)
+    pickup_estimated_time: str | None = Field(None, max_length=100)
+
+
 class TripLocationCreateRequest(BaseModel):
     """Ponto GPS durante a viagem."""
 
@@ -905,6 +914,7 @@ class TripLocationResponse(BaseModel):
     latitude: float
     longitude: float
     speed: float | None = None
+    phase: str | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -967,6 +977,8 @@ class TripDriverListItem(BaseModel):
     status: str
     started_at: datetime | None = None
     estimated_time: str | None = None
+    pickup_distance_km: float | None = None
+    pickup_estimated_time: str | None = None
     departure_date: date | None = None
     created_at: datetime
 

@@ -20,7 +20,12 @@ from constants import (
     TRIP_STATUS_STARTED,
 )
 from models.models import Client, Company, Driver, Load, Trip, TripLocation, TripStop, User
-from schemas.schemas import TripLocationCreateRequest, TripStartRequest, TripStopCreateRequest
+from schemas.schemas import (
+    TripLocationCreateRequest,
+    TripPickupStartRequest,
+    TripStartRequest,
+    TripStopCreateRequest,
+)
 
 
 def require_driver(db: Session, user: User) -> Driver:
@@ -139,6 +144,8 @@ def build_trip_list_item(trip: Trip) -> dict:
         "traveled_distance_km": float(trip.traveled_distance_km) if trip.traveled_distance_km is not None else None,
         "progress_percent": _calc_progress(trip),
         "estimated_time": trip.estimated_time,
+        "pickup_distance_km": float(trip.pickup_distance_km) if trip.pickup_distance_km is not None else None,
+        "pickup_estimated_time": trip.pickup_estimated_time,
         "departure_date": load.departure_date if load else None,
         "created_at": trip.created_at,
         "company": {
@@ -198,7 +205,7 @@ def build_trip_detail(trip: Trip) -> dict:
             "longitude": float(act.longitude) if act.longitude is not None else None,
             "created_at": act.created_at,
         }
-        for act in (trip.activities or [])
+        for act in sorted((trip.activities or []), key=lambda item: (item.created_at, item.id))
     ]
     stops_data = [_serialize_stop(s) for s in (trip.stops or [])]
 
@@ -219,6 +226,8 @@ def build_trip_detail(trip: Trip) -> dict:
         "total_distance_km": float(trip.total_distance_km) if trip.total_distance_km is not None else None,
         "traveled_distance_km": float(trip.traveled_distance_km) if trip.traveled_distance_km is not None else None,
         "estimated_time": trip.estimated_time,
+        "pickup_distance_km": float(trip.pickup_distance_km) if trip.pickup_distance_km is not None else None,
+        "pickup_estimated_time": trip.pickup_estimated_time,
         "created_at": trip.created_at,
         "load_code": load.code if load else "",
         "load_type": load.load_type if load else "",
@@ -330,11 +339,16 @@ def get_driver_trip_detail(db: Session, user: User, trip_id: int) -> dict:
     return build_trip_detail(trip)
 
 
-def start_driver_pickup_trip(db: Session, user: User, trip_id: int) -> dict:
+def start_driver_pickup_trip(
+    db: Session,
+    user: User,
+    trip_id: int,
+    data: TripPickupStartRequest | None = None,
+) -> dict:
     """Motorista inicia deslocamento para coleta."""
     from controllers.trips_controller import start_pickup_trip
 
-    start_pickup_trip(db, user, trip_id)
+    start_pickup_trip(db, user, trip_id, data)
     driver = require_driver(db, user)
     return build_trip_detail(get_driver_trip(db, driver, trip_id))
 

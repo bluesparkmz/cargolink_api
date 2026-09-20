@@ -3,7 +3,7 @@ Rotas do app motorista — viagens, GPS e paragens.
 Sem carteira, pagamentos ou publicação de cargas.
 """
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Body, Depends, Query
 from sqlalchemy.orm import Session
 
 from constants import STOP_TYPES, TRIP_GROUP_COMPLETED, TRIP_GROUP_IN_PROGRESS
@@ -30,6 +30,7 @@ from schemas.schemas import (
     TripDriverListItem,
     TripLocationCreateRequest,
     TripLocationResponse,
+    TripPickupStartRequest,
     TripStartRequest,
     TripStopCreateRequest,
     TripStopResumeRequest,
@@ -71,11 +72,12 @@ def get_trip_detail(
 @router.patch("/{trip_id}/start-pickup", response_model=TripDriverDetailResponse)
 def start_pickup_trip(
     trip_id: int,
+    data: TripPickupStartRequest | None = Body(default=None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Sair para carregar / a caminho da origem da carga."""
-    return start_driver_pickup_trip(db, current_user, trip_id)
+    return start_driver_pickup_trip(db, current_user, trip_id, data)
 
 
 @router.patch("/{trip_id}/arrive-pickup", response_model=TripDriverDetailResponse)

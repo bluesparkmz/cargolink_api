@@ -87,6 +87,8 @@ def test_driver_trip_detail_matches_response_contract():
         total_distance_km=None,
         traveled_distance_km=None,
         estimated_time=None,
+        pickup_distance_km=12.5,
+        pickup_estimated_time="18 min",
         created_at=now,
         load=load,
         company=SimpleNamespace(id=40, company_name="Transportadora"),
@@ -103,3 +105,5 @@ def test_driver_trip_detail_matches_response_contract():
     assert validated.vehicle.created_at == now
     assert validated.load is not None
     assert validated.load.negotiable is True
+    assert validated.pickup_distance_km == 12.5
+    assert validated.pickup_estimated_time == "18 min"

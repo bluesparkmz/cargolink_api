@@ -2,7 +2,7 @@
 Rotas de viagens: estados e localização em tempo real.
 """
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Body, Depends
 from sqlalchemy.orm import Session
 
 from controllers.trips_controller import (
@@ -26,6 +26,7 @@ from schemas.schemas import (
     TripAssignVehicleRequest,
     TripLocationCreateRequest,
     TripLocationResponse,
+    TripPickupStartRequest,
     TripResponse,
     TripStartRequest,
 )
@@ -63,11 +64,12 @@ def assign_vehicle(trip_id: int, data: TripAssignVehicleRequest, current_user: U
 @router.patch("/{trip_id}/start-pickup", response_model=TripResponse)
 def start_pickup(
     trip_id: int,
+    data: TripPickupStartRequest | None = Body(default=None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Motorista inicia deslocamento para o local de carregamento (origem)."""
-    return start_pickup_trip(db, current_user, trip_id)
+    return start_pickup_trip(db, current_user, trip_id, data)
 
 
 @router.patch("/{trip_id}/arrive-pickup", response_model=TripResponse)

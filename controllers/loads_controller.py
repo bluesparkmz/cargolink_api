@@ -1092,6 +1092,8 @@ def accept_proposal(db: Session, user: User, load_id: int, proposal_id: int) -> 
         trip.total_distance_km = None
         trip.traveled_distance_km = None
         trip.estimated_time = None
+        trip.pickup_distance_km = None
+        trip.pickup_estimated_time = None
     else:
         trip = Trip(
             load_id=load_id,

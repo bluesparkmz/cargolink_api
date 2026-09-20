@@ -17,6 +17,7 @@ from models.models import (
     Driver,
     Load,
     Trip,
+    TripActivity,
     TripEvidence,
     TripEvidenceStage,
     User,
@@ -339,14 +340,42 @@ def finalize_evidence_stage(db: Session, user: User, trip_id: int, stage: str) -
         for user_id in _recipient_user_ids(db, trip)
     ]
 
+    # A finalização, e não cada fotografia individual, representa o marco
+    # operacional que cliente e empresa devem ver no histórico da viagem.
+    activity = TripActivity(
+        trip_id=trip.id,
+        event_type=event_type,
+        title=(
+            "Prova de Recolha Enviada"
+            if stage == STAGE_PICKUP
+            else "Prova de Entrega e POD Enviados"
+        ),
+        description=body,
+    )
+    db.add(activity)
+
+    # Fase, notificações e atividade são persistidas de forma atómica.
     db.commit()
+    db.refresh(activity)
     for notification in notifications:
         db.refresh(notification)
         emit_notification(notification)
 
     emit_to_rooms(
         {f"trip:{trip.id}", f"load:{trip.load_id}"},
-        {"type": event_type, "trip_id": trip.id, "load_id": trip.load_id, "stage": stage},
+        {
+            "type": event_type,
+            "trip_id": trip.id,
+            "load_id": trip.load_id,
+            "stage": stage,
+            "activity": {
+                "id": activity.id,
+                "event_type": activity.event_type,
+                "title": activity.title,
+                "description": activity.description,
+                "created_at": activity.created_at,
+            },
+        },
     )
     return evidence_summary(db, user, trip.id)
 

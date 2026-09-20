@@ -32,7 +32,7 @@ from controllers.notifications_controller import create_notification, emit_notif
 from controllers.realtime_events import emit_to_rooms
 from controllers.wallet_transport_controller import release_transport_escrow_for_trip
 from models.models import Client, Company, Driver, Load, Trip, TripActivity, TripEvidenceStage, TripLocation, User, Vehicle
-from schemas.schemas import TripLocationCreateRequest, TripStartRequest
+from schemas.schemas import TripLocationCreateRequest, TripPickupStartRequest, TripStartRequest
 
 
 def log_trip_activity(
@@ -145,7 +145,7 @@ def _serialize_trip(trip: Trip) -> dict:
             "longitude": float(act.longitude) if act.longitude is not None else None,
             "created_at": act.created_at,
         }
-        for act in (trip.activities or [])
+        for act in sorted((trip.activities or []), key=lambda item: (item.created_at, item.id))
     ]
 
     return {
@@ -171,6 +171,8 @@ def _serialize_trip(trip: Trip) -> dict:
         "total_distance_km": float(trip.total_distance_km) if trip.total_distance_km is not None else None,
         "traveled_distance_km": float(trip.traveled_distance_km) if trip.traveled_distance_km is not None else None,
         "estimated_time": trip.estimated_time,
+        "pickup_distance_km": float(trip.pickup_distance_km) if trip.pickup_distance_km is not None else None,
+        "pickup_estimated_time": trip.pickup_estimated_time,
         "created_at": trip.created_at,
         "load": load_data,
         "vehicle": vehicle_data,
@@ -277,8 +279,14 @@ def _should_store_trip_location(
     last_location: TripLocation | None,
     latitude: Decimal,
     longitude: Decimal,
+    phase: str,
 ) -> bool:
     if last_location is None:
+        return True
+
+    # Conserva sempre o primeiro ponto de cada fase, mesmo que a mudança de
+    # estado aconteça poucos segundos depois do último heartbeat.
+    if last_location.phase != phase:
         return True
 
     elapsed_seconds = _seconds_since(last_location.created_at)
@@ -338,9 +346,15 @@ def _trip_status_event_payload(db: Session, trip: Trip) -> dict:
         "client_id": client_id,
         "company_id": trip.company_id,
         "status": trip.status,
+        "en_route_pickup_at": trip.en_route_pickup_at,
+        "arrived_pickup_at": trip.arrived_pickup_at,
+        "loaded_at": trip.loaded_at,
         "started_at": trip.started_at,
         "arrived_at": trip.arrived_at,
         "completed_at": trip.completed_at,
+        "pickup_distance_km": float(trip.pickup_distance_km) if trip.pickup_distance_km is not None else None,
+        "pickup_estimated_time": trip.pickup_estimated_time,
+        "estimated_time": trip.estimated_time,
         "load": {
             "id": load.id,
             "code": load.code,
@@ -497,7 +511,12 @@ def assign_vehicle_to_trip(db: Session, user: User, trip_id: int, vehicle_id: in
     return _serialize_trip(get_trip_detail(db, trip.id))
 
 
-def start_pickup_trip(db: Session, user: User, trip_id: int) -> Trip:
+def start_pickup_trip(
+    db: Session,
+    user: User,
+    trip_id: int,
+    data: TripPickupStartRequest | None = None,
+) -> Trip:
     """Motorista inicia deslocamento para o local de carregamento (origem)."""
     if user.user_type != "motorista":
         raise HTTPException(
@@ -518,6 +537,11 @@ def start_pickup_trip(db: Session, user: User, trip_id: int) -> Trip:
 
     trip.status = TRIP_STATUS_EN_ROUTE_PICKUP
     trip.en_route_pickup_at = datetime.now(timezone.utc)
+    if data is not None:
+        if data.pickup_distance_km is not None:
+            trip.pickup_distance_km = Decimal(str(data.pickup_distance_km))
+        if data.pickup_estimated_time:
+            trip.pickup_estimated_time = data.pickup_estimated_time.strip()
 
     load = db.query(Load).filter(Load.id == trip.load_id).first()
     if load:
@@ -531,7 +555,10 @@ def start_pickup_trip(db: Session, user: User, trip_id: int) -> Trip:
         trip,
         event_type=TRIP_STATUS_EN_ROUTE_PICKUP,
         title="Indo Carregar",
-        description="Motorista a caminho do local de coleta/origem da carga.",
+        description=(
+            "Motorista a caminho do local de coleta/origem da carga."
+            + (f" Previsão de chegada: {trip.pickup_estimated_time}." if trip.pickup_estimated_time else "")
+        ),
         latitude=driver.current_lat,
         longitude=driver.current_lng,
     )
@@ -887,7 +914,7 @@ def _record_gps_point(
     _sync_live_location(trip, driver, latitude, longitude)
 
     last_location = _latest_trip_location(db, trip.id)
-    if not _should_store_trip_location(last_location, latitude, longitude):
+    if not _should_store_trip_location(last_location, latitude, longitude, trip.status):
         db.commit()
         return last_location
 
@@ -896,6 +923,7 @@ def _record_gps_point(
         latitude=latitude,
         longitude=longitude,
         speed=Decimal(str(data.speed)) if data.speed is not None else None,
+        phase=trip.status,
     )
     db.add(location)
     db.commit()
@@ -918,10 +946,15 @@ def add_trip_location(
     if driver is None or trip.driver_id != driver.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Viagem de outro motorista")
 
-    if trip.status != TRIP_STATUS_STARTED:
+    if trip.status not in (
+        TRIP_STATUS_EN_ROUTE_PICKUP,
+        TRIP_STATUS_ARRIVED_PICKUP,
+        TRIP_STATUS_LOADED,
+        TRIP_STATUS_STARTED,
+    ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Localização só durante viagem em curso",
+            detail="Localização só durante deslocamento ou viagem em curso",
         )
 
     return _record_gps_point(db, trip, driver, data)
