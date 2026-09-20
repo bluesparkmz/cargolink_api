@@ -10,6 +10,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session, joinedload
 
 from constants import (
+    LOAD_STATUS_ACCEPTED,
     LOAD_STATUS_ARRIVED_PICKUP,
     LOAD_STATUS_EN_ROUTE_PICKUP,
     LOAD_STATUS_IN_TRANSIT,
@@ -503,6 +504,11 @@ def assign_vehicle_to_trip(db: Session, user: User, trip_id: int, vehicle_id: in
     trip = get_trip_detail(db, trip_id)
     if trip.company_id != company.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Esta viagem pertence a outra empresa')
+    if trip.load is None or trip.load.status != LOAD_STATUS_ACCEPTED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail='Esta carga foi cancelada ou ja nao esta disponivel para atribuicao de camiao',
+        )
     if trip.status != TRIP_STATUS_WAITING:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='O camiao so pode ser atribuido antes do motorista iniciar a recolha')
 
