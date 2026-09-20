@@ -50,6 +50,7 @@ from models.models import (
     Load,
     LoadImage,
     LoadProposal,
+    Notification,
     ProposalNegotiation,
     Rating,
     Trip,
@@ -278,7 +279,52 @@ def build_load_detail_response(db: Session, load: Load) -> LoadDetailResponse:
 
     user = load.client.user
     avg_rating, rating_count = _client_ratings(db, user.id)
-    trip = db.query(Trip).filter(Trip.load_id == load.id).first()
+    trip = (
+        db.query(Trip)
+        .options(joinedload(Trip.activities))
+        .filter(Trip.load_id == load.id)
+        .order_by(Trip.created_at.desc(), Trip.id.desc())
+        .first()
+    )
+    cancellation_reason = None
+    if trip is not None and str(trip.status).lower().startswith("cancel"):
+        cancelled_activity = next(
+            (
+                activity
+                for activity in sorted(
+                    trip.activities or [],
+                    key=lambda item: (item.created_at, item.id),
+                    reverse=True,
+                )
+                if activity.event_type == "transport_cancelled"
+                or "cancel" in str(activity.title).lower()
+            ),
+            None,
+        )
+        if cancelled_activity is not None:
+            cancellation_reason = cancelled_activity.description
+
+        if not cancellation_reason:
+            notifications = (
+                db.query(Notification)
+                .filter(Notification.notification_type == "transport.cancelled")
+                .order_by(Notification.created_at.desc(), Notification.id.desc())
+                .limit(100)
+                .all()
+            )
+            matching_notification = next(
+                (
+                    notification
+                    for notification in notifications
+                    if isinstance(notification.payload, dict)
+                    and int(notification.payload.get("load_id") or 0) == load.id
+                ),
+                None,
+            )
+            if matching_notification is not None:
+                cancellation_reason = str(
+                    matching_notification.payload.get("reason") or ""
+                ).strip() or None
     proposals_count = (
         db.query(func.count(LoadProposal.id)).filter(LoadProposal.load_id == load.id).scalar() or 0
     )
@@ -326,6 +372,8 @@ def build_load_detail_response(db: Session, load: Load) -> LoadDetailResponse:
         ),
         route=_estimate_route(load, trip),
         proposals_count=proposals_count,
+        transport_status=trip.status if trip is not None else None,
+        cancellation_reason=cancellation_reason,
     )
 
 

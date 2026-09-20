@@ -572,6 +572,8 @@ class LoadDetailResponse(LoadResponse):
     sender: LoadSenderSummary
     route: LoadRouteEstimate | None = None
     proposals_count: int = 0
+    transport_status: str | None = None
+    cancellation_reason: str | None = None
 
 
 class LoadListItem(BaseModel):

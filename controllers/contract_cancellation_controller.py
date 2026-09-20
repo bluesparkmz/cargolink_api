@@ -24,6 +24,7 @@ from models.models import (
     ProposalNegotiation,
     Transaction,
     Trip,
+    TripActivity,
     User,
     Vehicle,
     Wallet,
@@ -212,7 +213,13 @@ def cancel_transport_contract(
     if client is None:
         raise HTTPException(status_code=404, detail="Cliente da carga não encontrado.")
 
-    trip = db.query(Trip).filter(Trip.load_id == load.id).with_for_update().first()
+    trip = (
+        db.query(Trip)
+        .filter(Trip.load_id == load.id)
+        .order_by(Trip.created_at.desc(), Trip.id.desc())
+        .with_for_update()
+        .first()
+    )
     company = None
     if user.user_type == "empresa":
         company = db.query(Company).filter(Company.user_id == user.id).first()
@@ -304,6 +311,14 @@ def cancel_transport_contract(
         trip.status = "cancelada"
         trip.driver_id = None
         trip.vehicle_id = None
+        db.add(
+            TripActivity(
+                trip_id=trip.id,
+                event_type="transport_cancelled",
+                title="Transporte cancelado",
+                description=reason,
+            )
+        )
     else:
         query = db.query(LoadProposal).filter(
             LoadProposal.load_id == load.id,
