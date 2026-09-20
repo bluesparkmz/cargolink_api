@@ -252,6 +252,7 @@ def build_trip_detail(trip: Trip) -> dict:
             "current_lat": float(vehicle.current_lat) if vehicle.current_lat is not None else None,
             "current_lng": float(vehicle.current_lng) if vehicle.current_lng is not None else None,
             "location_updated_at": vehicle.location_updated_at,
+            "created_at": vehicle.created_at,
         } if vehicle else None,
         "driver": {
             "id": driver.id,
@@ -279,6 +280,7 @@ def build_trip_detail(trip: Trip) -> dict:
             "weight": float(load.weight) if load.weight is not None else None,
             "weight_unit": load.weight_unit,
             "volume": float(load.volume) if load.volume is not None else None,
+            "negotiable": load.negotiable,
             "origin": load.origin,
             "destination": load.destination,
             "origin_lat": float(load.origin_lat) if load.origin_lat is not None else None,
