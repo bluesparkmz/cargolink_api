@@ -23,7 +23,7 @@ from constants import (
     USER_TYPE_COMPANY,
     USER_TYPE_USUARIO,
 )
-from security import create_access_token, hash_password, verify_password
+from security import create_access_token, decode_token, hash_password, verify_password
 from models.models import AuthVerificationCode, Client, Company, User, Wallet
 from schemas.schemas import CompleteOnboardingRequest, PasswordChangeRequest, RegisterRequest
 
@@ -161,9 +161,25 @@ def verify_user_email(db: Session, email: str, code: str) -> User:
     return user
 
 
-def reset_user_password(db: Session, email: str, code: str, password: str) -> None:
+def verify_password_reset_code(db: Session, email: str, code: str) -> str:
     user = user_for_email(db, email)
     consume_verification_code(db, user, "password_reset", code)
+    return create_access_token(
+        {"sub": str(user.id), "purpose": "password_reset"}, expires_minutes=15
+    )
+
+
+def reset_user_password(db: Session, reset_token: str, password: str) -> None:
+    payload = decode_token(reset_token)
+    if not payload or payload.get("purpose") != "password_reset":
+        raise HTTPException(status_code=400, detail="Autorização de recuperação inválida ou expirada")
+    try:
+        user_id = int(payload.get("sub"))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="Autorização de recuperação inválida ou expirada") from exc
+    user = db.query(User).filter(User.id == user_id).first()
+    if user is None:
+        raise HTTPException(status_code=400, detail="Autorização de recuperação inválida ou expirada")
     user.password_hash = hash_password(password)
     db.commit()
 

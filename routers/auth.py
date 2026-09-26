@@ -15,6 +15,7 @@ from controllers.auth_controller import (
     register_user,
     reset_user_password,
     user_for_email,
+    verify_password_reset_code,
     verify_user_email,
 )
 from deps import get_current_user
@@ -91,8 +92,14 @@ def request_password_reset(
 def confirm_password_reset(
     data: PasswordResetConfirmRequest, db: Session = Depends(get_db)
 ):
-    reset_user_password(db, str(data.email), data.code, data.new_password)
+    reset_user_password(db, data.reset_token, data.new_password)
     return {"message": "Senha alterada com sucesso"}
+
+
+@router.post("/password-reset/verify")
+def verify_password_reset(data: EmailCodeConfirmRequest, db: Session = Depends(get_db)):
+    token = verify_password_reset_code(db, str(data.email), data.code)
+    return {"reset_token": token}
 
 
 @router.post("/complete-onboarding", response_model=UserResponse)

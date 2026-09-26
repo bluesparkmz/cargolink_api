@@ -60,7 +60,8 @@ class EmailCodeConfirmRequest(EmailCodeRequest):
     code: str = Field(..., pattern=r"^\d{6}$")
 
 
-class PasswordResetConfirmRequest(EmailCodeConfirmRequest):
+class PasswordResetConfirmRequest(BaseModel):
+    reset_token: str = Field(..., min_length=20)
     new_password: str = Field(..., min_length=6, max_length=128)
 
 
