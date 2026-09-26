@@ -625,57 +625,13 @@ def sync_deposit_with_mpesa(db: Session, user: User, payment_id: int) -> dict:
 
 def confirm_deposit(db: Session, user: User, payment_id: int) -> dict:
     """
-    Confirma depósito pendente manualmente (para testes ou confirmação manual).
-    Em produção, o callback do M-Pesa fará isso automaticamente.
-    Só o dono do pagamento pode confirmar.
+    Confere o estado real do depósito no M-Pesa.
+
+    Este endpoint é mantido por compatibilidade com versões antigas do app,
+    mas nunca pode creditar saldo apenas porque o utilizador tocou em
+    "confirmar". O crédito só acontece após confirmação do gateway.
     """
-    payment = db.query(Payment).filter(Payment.id == payment_id).first()
-    if payment is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pagamento não encontrado")
-    if payment.user_id != user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Sem acesso")
-    if payment.method != PAYMENT_METHOD_MPESA or payment.load_id is not None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Pagamento inválido para depósito na carteira",
-        )
-    if payment.status == PAYMENT_STATUS_COMPLETED:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Depósito já confirmado",
-        )
-    if payment.status == PAYMENT_STATUS_FAILED:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Depósito falhou; inicie um novo pedido",
-        )
-
-    wallet = get_or_create_wallet(db, user)
-    transaction = (
-        db.query(Transaction)
-        .filter(
-            Transaction.wallet_id == wallet.id,
-            Transaction.reference == payment.external_reference,
-        )
-        .first()
-    )
-    if transaction is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Movimento da carteira não encontrado",
-        )
-
-    _complete_deposit(db, wallet, payment, transaction)
-    
-    return {
-        "payment_id": payment.id,
-        "transaction_id": transaction.id,
-        "amount": float(payment.amount),
-        "status": payment.status,
-        "external_reference": payment.external_reference or "",
-        "phone": payment.phone or user.phone,
-        "message": "Depósito confirmado. Saldo atualizado.",
-    }
+    return sync_deposit_with_mpesa(db, user, payment_id)
 
 
 def process_mpesa_callback(payload: dict) -> dict:

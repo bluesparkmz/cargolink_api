@@ -144,7 +144,7 @@ def deposit_status_route(
 
 @router.post(
     "/deposits/{payment_id}/confirm",
-    response_model=WalletDepositResponse,
+    response_model=WalletDepositStatusResponse,
 )
 def confirm_deposit_route(
     payment_id: int,
