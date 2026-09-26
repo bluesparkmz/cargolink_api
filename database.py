@@ -8,8 +8,22 @@ from sqlalchemy.orm import sessionmaker, DeclarativeBase
 
 from config import settings
 
+
+def _database_url() -> str:
+    """Usa o driver psycopg2 instalado mesmo se o provedor indicar psycopg v3."""
+    url = settings.DATABASE_URL
+    if not url:
+        raise RuntimeError("DATABASE_URL não está configurada")
+    if url.startswith("postgresql+psycopg://"):
+        return url.replace("postgresql+psycopg://", "postgresql+psycopg2://", 1)
+    if url.startswith("postgres://"):
+        return url.replace("postgres://", "postgresql+psycopg2://", 1)
+    if url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+psycopg2://", 1)
+    return url
+
 # Motor de ligação à base de dados
-engine = create_engine(settings.DATABASE_URL, pool_pre_ping=True)
+engine = create_engine(_database_url(), pool_pre_ping=True)
 
 # Fábrica de sessões (uma sessão por pedido)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
