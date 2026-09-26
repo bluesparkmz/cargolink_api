@@ -52,6 +52,18 @@ class PasswordChangeRequest(BaseModel):
     new_password: str = Field(..., min_length=6, max_length=128)
 
 
+class EmailCodeRequest(BaseModel):
+    email: EmailStr
+
+
+class EmailCodeConfirmRequest(EmailCodeRequest):
+    code: str = Field(..., pattern=r"^\d{6}$")
+
+
+class PasswordResetConfirmRequest(EmailCodeConfirmRequest):
+    new_password: str = Field(..., min_length=6, max_length=128)
+
+
 class TokenResponse(BaseModel):
     """Resposta com JWT após login ou registo."""
 

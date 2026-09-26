@@ -53,6 +53,23 @@ class User(Base):
     payments: Mapped[list["Payment"]] = relationship(back_populates="user")
 
 
+class AuthVerificationCode(Base):
+    """OTP de uso único para verificar email ou recuperar senha."""
+
+    __tablename__ = "auth_verification_codes"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    purpose: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    code_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 # ---------------------------------------------------------------------------
 # 2. Cliente
 # ---------------------------------------------------------------------------
