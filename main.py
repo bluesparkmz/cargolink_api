@@ -52,6 +52,23 @@ async def lifespan(app: FastAPI):
     try:
         from sqlalchemy import text
         with engine.connect() as conn:
+            conn.execute(text("""
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1
+                        FROM information_schema.columns
+                        WHERE table_name = 'users'
+                          AND column_name = 'deve_alterar_senha'
+                    ) THEN
+                        ALTER TABLE users
+                            ADD COLUMN deve_alterar_senha BOOLEAN NOT NULL DEFAULT FALSE;
+                        UPDATE users
+                           SET deve_alterar_senha = TRUE
+                         WHERE tipo = 'motorista';
+                    END IF;
+                END $$;
+            """))
             conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS push_token TEXT;"))
             conn.execute(text("ALTER TABLE trips ADD COLUMN IF NOT EXISTS en_route_pickup_at TIMESTAMP;"))
             conn.execute(text("ALTER TABLE trips ADD COLUMN IF NOT EXISTS arrived_pickup_at TIMESTAMP;"))

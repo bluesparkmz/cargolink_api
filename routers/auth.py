@@ -9,6 +9,7 @@ from controllers.auth_controller import (
     authenticate_google_user,
     authenticate_user,
     change_password,
+    change_initial_password,
     complete_onboarding,
     create_user_token,
     create_verification_code,
@@ -28,6 +29,7 @@ from schemas.schemas import (
     GoogleLoginRequest,
     LoginRequest,
     PasswordChangeRequest,
+    InitialPasswordChangeRequest,
     PasswordResetConfirmRequest,
     RegisterRequest,
     TokenResponse,
@@ -143,3 +145,13 @@ def update_password(
     """Altera senha (ecrã Segurança do perfil)."""
     change_password(db, current_user, data)
     return {"message": "Senha alterada com sucesso"}
+
+
+@router.patch("/password/initial", response_model=UserResponse)
+def update_initial_password(
+    data: InitialPasswordChangeRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Obriga o motorista autenticado a substituir a senha temporária."""
+    return change_initial_password(db, current_user, data.new_password)

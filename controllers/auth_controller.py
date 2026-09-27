@@ -7,6 +7,7 @@ import hashlib
 import hmac
 import os
 import secrets
+import re
 from datetime import datetime, timedelta
 
 from fastapi import HTTPException, status
@@ -351,4 +352,30 @@ def change_password(db: Session, user: User, data: PasswordChangeRequest) -> Non
         )
 
     user.password_hash = hash_password(data.new_password)
+    user.must_change_password = False
     db.commit()
+
+
+def change_initial_password(db: Session, user: User, new_password: str) -> User:
+    """Substitui a senha temporária de um motorista autenticado."""
+    if user.user_type != USER_TYPE_DRIVER or not user.must_change_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A troca inicial de senha não está pendente",
+        )
+    if verify_password(new_password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Crie uma senha diferente da senha temporária",
+        )
+    if not re.search(r"[A-Za-zÀ-ÿ]", new_password) or not re.search(r"\d", new_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A nova senha deve conter pelo menos uma letra e um número",
+        )
+
+    user.password_hash = hash_password(new_password)
+    user.must_change_password = False
+    db.commit()
+    db.refresh(user)
+    return user

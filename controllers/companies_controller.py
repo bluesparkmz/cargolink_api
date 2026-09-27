@@ -231,6 +231,7 @@ def create_driver_for_company(
         user_type="motorista",
         status="ativo",
         verified=False,
+        must_change_password=True,
     )
     db.add(new_user)
     db.flush()  # Força a geração do ID

@@ -39,6 +39,9 @@ class User(Base):
     profile_photo: Mapped[str | None] = mapped_column("foto_perfil", Text)
     status: Mapped[str] = mapped_column(String(30), default="ativo")
     verified: Mapped[bool] = mapped_column("verificado", Boolean, default=False)
+    must_change_password: Mapped[bool] = mapped_column(
+        "deve_alterar_senha", Boolean, default=False, nullable=False
+    )
     push_token: Mapped[str | None] = mapped_column("push_token", Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

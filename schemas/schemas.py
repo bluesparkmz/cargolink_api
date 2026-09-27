@@ -52,6 +52,12 @@ class PasswordChangeRequest(BaseModel):
     new_password: str = Field(..., min_length=6, max_length=128)
 
 
+class InitialPasswordChangeRequest(BaseModel):
+    """Substituir a senha temporária no primeiro acesso do motorista."""
+
+    new_password: str = Field(..., min_length=6, max_length=128)
+
+
 class EmailCodeRequest(BaseModel):
     email: EmailStr
 
@@ -82,6 +88,7 @@ class UserResponse(BaseModel):
     user_type: str
     status: str
     verified: bool
+    must_change_password: bool = False
     profile_photo: str | None = None
 
     model_config = {"from_attributes": True}
