@@ -112,6 +112,16 @@ class UserUpdateRequest(BaseModel):
     profile_photo: str | None = None
 
 
+class PushTokenRegistrationRequest(BaseModel):
+    token: str = Field(..., min_length=20, max_length=512)
+    app_name: Literal["main", "driver"]
+    platform: Literal["android", "ios"]
+
+
+class PushTokenRemovalRequest(BaseModel):
+    token: str = Field(..., min_length=20, max_length=512)
+
+
 class ClientProfileResponse(BaseModel):
     """Perfil cliente ligado ao utilizador."""
 

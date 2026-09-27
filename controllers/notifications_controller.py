@@ -13,6 +13,7 @@ from sqlalchemy.orm import Query, Session
 
 from controllers.realtime_events import emit_to_user
 from models.models import Notification, User
+from services.push_notifications import queue_push_notification
 
 
 DRIVER_EXACT_NOTIFICATION_TYPES = {
@@ -67,6 +68,14 @@ def emit_notification(notification: Notification) -> None:
             "type": "notification.created",
             "notification": notification,
         },
+    )
+    queue_push_notification(
+        user_id=notification.user_id,
+        notification_id=notification.id,
+        title=notification.title,
+        body=notification.body,
+        notification_type=notification.notification_type,
+        payload=notification.payload or {},
     )
 
 

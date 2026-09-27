@@ -53,6 +53,9 @@ class User(Base):
     driver: Mapped[Driver | None] = relationship(back_populates="user", uselist=False)
     documents: Mapped[list[Document]] = relationship(back_populates="user")
     notifications: Mapped[list[Notification]] = relationship(back_populates="user")
+    push_tokens: Mapped[list[UserPushToken]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
     payments: Mapped[list["Payment"]] = relationship(back_populates="user")
 
 
@@ -574,6 +577,27 @@ class Notification(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     user: Mapped[User] = relationship(back_populates="notifications")
+
+
+class UserPushToken(Base):
+    """Dispositivos autorizados a receber notificações push do utilizador."""
+
+    __tablename__ = "user_push_tokens"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    token: Mapped[str] = mapped_column(Text, nullable=False, unique=True, index=True)
+    app_name: Mapped[str] = mapped_column(String(20), nullable=False)
+    platform: Mapped[str] = mapped_column(String(20), nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+    user: Mapped[User] = relationship(back_populates="push_tokens")
 
 
 # ---------------------------------------------------------------------------

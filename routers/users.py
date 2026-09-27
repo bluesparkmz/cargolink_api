@@ -2,14 +2,22 @@
 Rotas de utilizadores: dados base e perfil geral.
 """
 
+from datetime import datetime
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from controllers.users_controller import get_user_by_id, get_user_profile, update_user
 from deps import get_current_user
 from database import get_db
-from models.models import User
-from schemas.schemas import UserProfileResponse, UserResponse, UserUpdateRequest
+from models.models import User, UserPushToken
+from schemas.schemas import (
+    PushTokenRegistrationRequest,
+    PushTokenRemovalRequest,
+    UserProfileResponse,
+    UserResponse,
+    UserUpdateRequest,
+)
 
 router = APIRouter()
 
@@ -58,3 +66,44 @@ def update_push_token(
     current_user.push_token = data.push_token
     db.commit()
     return {"status": "ok", "message": "Push token updated successfully"}
+
+
+@router.post("/me/push-tokens")
+def register_push_token(
+    data: PushTokenRegistrationRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Regista ou reactiva este aparelho para notificações nativas."""
+    device = db.query(UserPushToken).filter(UserPushToken.token == data.token).first()
+    if device is None:
+        device = UserPushToken(
+            user_id=current_user.id,
+            token=data.token,
+            app_name=data.app_name,
+            platform=data.platform,
+        )
+        db.add(device)
+    else:
+        device.user_id = current_user.id
+        device.app_name = data.app_name
+        device.platform = data.platform
+        device.active = True
+        device.last_seen_at = datetime.utcnow()
+    db.commit()
+    return {"status": "ok"}
+
+
+@router.delete("/me/push-tokens")
+def remove_push_token(
+    data: PushTokenRemovalRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Desactiva o aparelho no logout sem afectar os restantes aparelhos."""
+    db.query(UserPushToken).filter(
+        UserPushToken.user_id == current_user.id,
+        UserPushToken.token == data.token,
+    ).update({UserPushToken.active: False}, synchronize_session=False)
+    db.commit()
+    return {"status": "ok"}
