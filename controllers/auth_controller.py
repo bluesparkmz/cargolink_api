@@ -21,6 +21,7 @@ from constants import (
     USER_STATUS_PENDING,
     USER_TYPE_CLIENT,
     USER_TYPE_COMPANY,
+    USER_TYPE_DRIVER,
     USER_TYPE_USUARIO,
 )
 from security import create_access_token, decode_token, hash_password, verify_password
@@ -240,7 +241,11 @@ def authenticate_user(db: Session, email: str, password: str) -> User:
             detail="Conta inativa ou suspensa",
         )
 
-    if not user.verified:
+    # Motoristas são criados e associados por uma empresa já autenticada.
+    # Por isso podem entrar no Fretix Driver sem concluir o fluxo de OTP.
+    # Cliente, empresa e conta ainda em onboarding continuam obrigados a
+    # verificar o email antes do login no aplicativo principal.
+    if not user.verified and user.user_type != USER_TYPE_DRIVER:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="EMAIL_NOT_VERIFIED",
